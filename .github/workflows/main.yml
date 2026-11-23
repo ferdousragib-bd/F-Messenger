@@ -1,3 +1,4 @@
+
 name: Build F Messenger APK
 
 on:
@@ -9,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -20,13 +22,22 @@ jobs:
           java-version: '17'
 
       - name: Setup Android
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
 
       - name: Extract project
         run: |
           unzip -o FMessenger-Android-Project.zip -d source
-          cd source/FMessenger
-          gradle assembleDebug
+          ls -la source
+          ls -la source/FMessenger
+
+      - name: Build APK
+        working-directory: source/FMessenger
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
