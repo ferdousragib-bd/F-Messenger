@@ -1,4 +1,3 @@
-
 name: Build F Messenger APK
 
 on:
@@ -32,8 +31,37 @@ jobs:
       - name: Extract project
         run: |
           unzip -o FMessenger-Android-Project.zip -d source
-          ls -la source
           ls -la source/FMessenger
+
+      - name: Fix Compose Compiler
+        working-directory: source/FMessenger
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+
+          if "org.jetbrains.kotlin.plugin.compose" not in s:
+              s, count = re.subn(
+                  r'(plugins\s*\{)',
+                  r'\1\n    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"',
+                  s,
+                  count=1
+              )
+              if count == 0:
+                  raise SystemExit("Could not find plugins block")
+
+          s = re.sub(
+              r'(?ms)^\s*composeOptions\s*\{.*?^\s*\}\s*',
+              '\n',
+              s
+          )
+
+          p.write_text(s)
+          print("Compose Compiler plugin configured successfully")
+          PY
 
       - name: Build APK
         working-directory: source/FMessenger
