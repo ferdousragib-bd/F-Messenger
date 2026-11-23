@@ -34,13 +34,34 @@ jobs:
         run: |
           unzip -o FMessenger-Android-Project.zip -d source
 
-      - name: Fix Compose and JVM Target
+      - name: Fix MainActivity and Gradle
         working-directory: source/FMessenger
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
+          # Fix MainActivity.kt syntax
+          main_file = Path("app/src/main/java/com/fmessenger/chat/MainActivity.kt")
+          code = main_file.read_text()
+
+          old = '''            }) { Icon(Icons.Default.Search, contentDescription = "Search") })
+                  )'''
+          new = '''            }) { Icon(Icons.Default.Search, contentDescription = "Search") } }
+                  )'''
+
+          if old in code:
+              code = code.replace(old, new, 1)
+          else:
+              old2 = '''            }) { Icon(Icons.Default.Search, contentDescription = "Search") })
+                  )'''
+              if old2 not in code:
+                  raise SystemExit("Search button syntax pattern not found")
+
+          main_file.write_text(code)
+          print("MainActivity syntax patch completed")
+
+          # Fix Gradle configuration
           p = Path("app/build.gradle.kts")
           s = p.read_text()
 
@@ -52,7 +73,7 @@ jobs:
                   count=1
               )
               if count == 0:
-                  raise SystemExit("ERROR: Plugins block not found")
+                  raise SystemExit("Plugins block not found")
 
           s = re.sub(
               r'(?ms)^\s*composeOptions\s*\{.*?^\s*\}\s*',
@@ -60,10 +81,13 @@ jobs:
               s
           )
 
-          # Configure Android Java compatibility directly
+          s = s.replace(
+              "JavaVersion.VERSION_1_8",
+              "JavaVersion.VERSION_17"
+          )
+
           s += """
 
-          // F MESSENGER: Java compatibility 17
           android {
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -71,7 +95,6 @@ jobs:
               }
           }
 
-          // F MESSENGER: Kotlin JVM target 17
           tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
               compilerOptions {
                   jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -80,14 +103,8 @@ jobs:
           """
 
           p.write_text(s)
-          print("Java and Kotlin JVM targets set to 17")
+          print("Gradle configuration completed")
           PY
-
-      - name: Verify JVM Target
-        working-directory: source/FMessenger
-        run: |
-          grep -n -A4 "compileOptions" app/build.gradle.kts
-          grep -n -A3 "jvmTarget" app/build.gradle.kts
 
       - name: Build APK
         working-directory: source/FMessenger
