@@ -44,7 +44,6 @@ jobs:
           p = Path("app/build.gradle.kts")
           s = p.read_text()
 
-          # Add the Compose compiler plugin
           if "org.jetbrains.kotlin.plugin.compose" not in s:
               s, count = re.subn(
                   r'(plugins\s*\{)',
@@ -55,42 +54,40 @@ jobs:
               if count == 0:
                   raise SystemExit("ERROR: Plugins block not found")
 
-          # Remove old Compose compiler configuration
           s = re.sub(
               r'(?ms)^\s*composeOptions\s*\{.*?^\s*\}\s*',
               '\n',
               s
           )
 
-          # Set Java compatibility to 17
-          s = s.replace(
-              "JavaVersion.VERSION_1_8",
-              "JavaVersion.VERSION_17"
-          )
-          s = s.replace(
-              'JavaVersion.toVersion("1.8")',
-              'JavaVersion.toVersion("17")'
-          )
+          # Configure Android Java compatibility directly
+          s += """
 
-          # Force both Java and Kotlin compilation to JVM 17
-          marker = "// F MESSENGER JVM TARGET FIX"
-          if marker not in s:
-              s += """
-
-          // F MESSENGER JVM TARGET FIX
-          tasks.withType<org.gradle.api.tasks.compile.JavaCompile>().configureEach {
-              sourceCompatibility = "17"
-              targetCompatibility = "17"
+          // F MESSENGER: Java compatibility 17
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
           }
 
+          // F MESSENGER: Kotlin JVM target 17
           tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-              kotlinOptions.jvmTarget = "17"
+              compilerOptions {
+                  jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+              }
           }
           """
 
           p.write_text(s)
-          print("Compose and JVM target configuration completed")
+          print("Java and Kotlin JVM targets set to 17")
           PY
+
+      - name: Verify JVM Target
+        working-directory: source/FMessenger
+        run: |
+          grep -n -A4 "compileOptions" app/build.gradle.kts
+          grep -n -A3 "jvmTarget" app/build.gradle.kts
 
       - name: Build APK
         working-directory: source/FMessenger
