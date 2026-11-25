@@ -3,6 +3,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function isAdmin() { return signedIn() && request.auth.token.admin == true; }
+    function isFollower(authorId) {
+      return signedIn() && exists(
+        /databases/$(database)/documents/follows/$(authorId)/followers/$(request.auth.uid)
+      );
+    }
     function chatMember(chatId) {
       return signedIn()
         && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
@@ -14,11 +19,11 @@ service cloud.firestore {
       allow update, delete: if signedIn() && request.auth.uid == userId;
     }
 
-    // Public feed posts. Media bytes live in Firebase Storage.
     match /posts/{postId} {
       allow read: if signedIn()
         && (resource.data.visibility == 'public'
-          || resource.data.authorId == request.auth.uid);
+          || resource.data.authorId == request.auth.uid
+          || (resource.data.visibility == 'followers' && isFollower(resource.data.authorId)));
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.caption is string
@@ -46,8 +51,6 @@ service cloud.firestore {
       }
     }
 
-    // Follow edges are stored as follows/{targetUid}/followers/{followerUid}
-    // and users/{followerUid}/following/{targetUid}.
     match /follows/{targetUid}/followers/{followerUid} {
       allow read: if signedIn();
       allow create, delete: if signedIn() && request.auth.uid == followerUid
