@@ -12,8 +12,11 @@ service cloud.firestore {
         || post.authorId == request.auth.uid
         || (post.visibility == 'followers' && isFollower(post.authorId)));
     }
+    function isBlocked(ownerId, targetId) { return exists(/databases/$(database)/documents/blocks/$(ownerId)/blocked/$(targetId)); }
     function chatMember(chatId) {
-      return signedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+      let members = get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+      return signedIn() && request.auth.uid in members
+        && !isBlocked(members[0], members[1]) && !isBlocked(members[1], members[0]);
     }
     // Private contact information is owner-only.
     match /users/{userId} {
@@ -108,6 +111,8 @@ service cloud.firestore {
         && request.resource.data.callerId == request.auth.uid
         && request.resource.data.calleeId is string
         && request.resource.data.calleeId != request.auth.uid
+        && !isBlocked(request.auth.uid, request.resource.data.calleeId)
+        && !isBlocked(request.resource.data.calleeId, request.auth.uid)
         && request.resource.data.status == 'ringing'
         && request.resource.data.type in ['audio', 'video'];
       allow read: if signedIn()
