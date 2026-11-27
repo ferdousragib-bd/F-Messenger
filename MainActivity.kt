@@ -1351,25 +1351,35 @@ private fun RemoteVideoPanel() {
 private fun IncomingCallHost() {
     val context = LocalContext.current
     val callId = CallCoordinator.incomingCallId
-    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val id = CallCoordinator.incomingCallId
-        if (granted && id != null) CallCoordinator.acceptVoiceCall(context, id)
+        val micOk = result[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val cameraOk = !CallCoordinator.incomingCallIsVideo || result[Manifest.permission.CAMERA] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (micOk && cameraOk && id != null) CallCoordinator.acceptVoiceCall(context, id)
     }
     if (callId != null) AlertDialog(
         onDismissRequest = { CallCoordinator.rejectIncoming(callId) },
-        title = { Text("ইনকামিং ভয়েস কল") },
-        text = { Text("${CallCoordinator.incomingCallerName} আপনাকে কল করছেন।") },
+        title = { Text(if (CallCoordinator.incomingCallIsVideo) "ইনকামিং ভিডিও কল" else "ইনকামিং ভয়েস কল") },
+        text = { Text("${CallCoordinator.incomingCallerName} আপনাকে ${if (CallCoordinator.incomingCallIsVideo) "ভিডিও" else "ভয়েস"} কল করছেন।") },
         confirmButton = { TextButton(onClick = {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                CallCoordinator.acceptVoiceCall(context, callId)
-            else permissions.launch(Manifest.permission.RECORD_AUDIO)
+            val required = mutableListOf(Manifest.permission.RECORD_AUDIO)
+            if (CallCoordinator.incomingCallIsVideo) required.add(Manifest.permission.CAMERA)
+            val missing = required.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+            if (missing.isEmpty()) CallCoordinator.acceptVoiceCall(context, callId)
+            else permissions.launch(missing.toTypedArray())
         }) { Text("রিসিভ") } },
         dismissButton = { TextButton(onClick = { CallCoordinator.rejectIncoming(callId) }) { Text("বাতিল") } }
     )
     if (CallCoordinator.activeCallId != null) AlertDialog(
         onDismissRequest = { CallCoordinator.endCall() },
         title = { Text("Pasha অ্যাপ কল") },
-        text = { Column { Text(CallCoordinator.remoteName); Text(CallCoordinator.callStatus) } },
+        text = { Column {
+            Text(CallCoordinator.remoteName)
+            Text(CallCoordinator.callStatus)
+            if (CallCoordinator.activeCallIsVideo) RemoteVideoPanel()
+        } },
         confirmButton = { TextButton(onClick = { CallCoordinator.endCall() }) { Text("কল কেটে দিন") } }
     )
 }
@@ -1411,6 +1421,14 @@ fun ChatScreen(person:Person,onBack:()->Unit) {
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) CallCoordinator.placeVoiceCall(context, person) else error = "কল করতে মাইক্রোফোনের অনুমতি দিন"
     }
+    val videoPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val micOk = result[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val cameraOk = result[Manifest.permission.CAMERA] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (micOk && cameraOk) CallCoordinator.placeVideoCall(context, person)
+        else error = "ভিডিও কলের জন্য ক্যামেরা ও মাইক্রোফোনের অনুমতি দিন"
+    }
     DisposableEffect(chatId){val l:ListenerRegistration=db.collection("chats").document(chatId).collection("messages").orderBy("createdAt").addSnapshotListener{snap,e->if(e!=null)error=e.localizedMessage?: "মেসেজ লোড হয়নি" else messages=snap?.documents?.mapNotNull{d->d.toObject(ChatMessage::class.java)?.copy(id=d.id)}?:emptyList()};onDispose{l.remove()}}
     Column(Modifier.fillMaxSize()){
         Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=8.dp, vertical=10.dp),verticalAlignment=Alignment.CenterVertically){
@@ -1428,7 +1446,13 @@ fun ChatScreen(person:Person,onBack:()->Unit) {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                     CallCoordinator.placeVoiceCall(context, person)
                 else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-            }) { Text("📞 কল", color=Color.White, fontWeight=FontWeight.Bold) }
+            }) { Text("📞", color=Color.White, fontWeight=FontWeight.Bold) }
+            TextButton(onClick={
+                val required = arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
+                val missing = required.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                if (missing.isEmpty()) CallCoordinator.placeVideoCall(context, person)
+                else videoPermissions.launch(missing.toTypedArray())
+            }) { Text("📹", color=Color.White, fontWeight=FontWeight.Bold) }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)){items(messages){m->
             Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==uid)Arrangement.End else Arrangement.Start){
