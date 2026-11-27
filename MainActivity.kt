@@ -150,6 +150,8 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
 @Composable
 fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
     var tab by remember { mutableStateOf("ফিড") }
+    var isAdmin by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { try { isAdmin = auth.currentUser?.getIdTokenResult(true)?.await()?.claims?.get("admin") == true } catch (_: Exception) { isAdmin = false } }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=16.dp,vertical=13.dp),verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){Text("Pasha অ্যাপ",color=Color.White,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text("Connect • Share • Discover",color=Color(0xFFD8E8FF),style=MaterialTheme.typography.labelSmall)}
@@ -161,11 +163,12 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
                 "খুঁজুন"-> DiscoverScreen(onChat)
                 "রিলস"-> ReelsScreen()
                 "চ্যাট"-> ChatsScreen(onChat)
+                "অ্যাডমিন"-> if (isAdmin) AdminReportsScreen() else ProfileScreen()
                 else-> ProfileScreen()
             }
         }
         Row(Modifier.fillMaxWidth().background(Color.White),horizontalArrangement=Arrangement.SpaceEvenly){
-            listOf("ফিড","খুঁজুন","রিলস","চ্যাট","প্রোফাইল").forEach { item ->
+            (listOf("ফিড","খুঁজুন","রিলস","চ্যাট","প্রোফাইল") + if (isAdmin) listOf("অ্যাডমিন") else emptyList()).forEach { item ->
                 TextButton(onClick={tab=item}){Text(item,color=if(tab==item)Blue else Color.Gray,fontWeight=if(tab==item)FontWeight.Bold else FontWeight.Normal)}
             }
         }
@@ -649,6 +652,33 @@ private fun IncomingCallHost() {
         text = { Column { Text(CallCoordinator.remoteName); Text(CallCoordinator.callStatus) } },
         confirmButton = { TextButton(onClick = { CallCoordinator.endCall() }) { Text("কল কেটে দিন") } }
     )
+}
+
+
+@Composable
+fun AdminReportsScreen() {
+    var reports by remember { mutableStateOf(listOf<com.google.firebase.firestore.DocumentSnapshot>()) }
+    var status by remember { mutableStateOf("") }
+    DisposableEffect(Unit) {
+        val listener = db.collection("reports").orderBy("createdAt", Query.Direction.DESCENDING).limit(100).addSnapshotListener { snap, error ->
+            if (error != null) status = error.localizedMessage ?: "রিপোর্ট লোড হয়নি" else reports = snap?.documents ?: emptyList()
+        }
+        onDispose { listener.remove() }
+    }
+    Column(Modifier.fillMaxSize().padding(12.dp)) {
+        Text("অ্যাডমিন প্যানেল • রিপোর্ট", style=MaterialTheme.typography.titleLarge, color=Navy, fontWeight=FontWeight.Bold)
+        if (status.isNotBlank()) Text(status, color=MaterialTheme.colorScheme.error)
+        if (reports.isEmpty()) Text("কোনো রিপোর্ট নেই", color=Color.Gray)
+        LazyColumn { items(reports, key={ it.id }) { report ->
+            val target = report.getString("targetId") ?: "unknown"
+            Column(Modifier.fillMaxWidth().padding(vertical=8.dp).background(Color.White, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                Text("টার্গেট: " + target, color=Navy, fontWeight=FontWeight.Bold)
+                Text("কারণ: " + (report.getString("reason") ?: "উল্লেখ নেই"))
+                Text("অবস্থা: " + (report.getString("status") ?: "open"), color=Color.Gray)
+                TextButton(onClick={ report.reference.update(mapOf("status" to "reviewed", "reviewedAt" to System.currentTimeMillis())) }) { Text("রিভিউ সম্পন্ন") }
+            }
+        } }
+    }
 }
 
 @Composable
