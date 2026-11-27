@@ -13,8 +13,8 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.IceCandidate
-import org.webrtc.RTCConfiguration
 import org.webrtc.PeerConnection.IceServer
+import org.webrtc.PeerConnection.RTCConfiguration
 import org.webrtc.PeerConnection.Observer
 import org.webrtc.MediaStream
 import org.webrtc.RtpReceiver
@@ -306,8 +306,6 @@ fun ProfileScreen() {
     }
 }
 
-@Composable
-
 /**
  * WebRTC voice-call coordinator. Firestore is used only for SDP/ICE signaling;
  * media travels peer-to-peer. Configure a TURN server for reliable mobile/NAT calls.
@@ -545,6 +543,7 @@ private fun IncomingCallHost() {
     )
 }
 
+@Composable
 fun ChatScreen(person:Person,onBack:()->Unit) {
     val uid=auth.currentUser?.uid?:return;val chatId=listOf(uid,person.uid).sorted().joinToString("_");var messages by remember{mutableStateOf(listOf<ChatMessage>())};var draft by remember{mutableStateOf("")};var error by remember{mutableStateOf("")};val scope= rememberCoroutineScope();val context= LocalContext.current
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
