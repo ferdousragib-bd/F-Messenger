@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "674333024235",
+    "project_id": "f-messenger-9f14a",
+    "storage_bucket": "f-messenger-9f14a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:674333024235:android:7da354b0c5824212eec3ae",
+        "android_client_info": {
+          "package_name": "com.fmessenger.chat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAqD85TN2tOjoIUQ7R4wrWOcnyAOyMQMK4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
