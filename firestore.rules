@@ -97,7 +97,7 @@ service cloud.firestore {
         && request.resource.data.calleeId is string
         && request.resource.data.calleeId != request.auth.uid
         && request.resource.data.status == 'ringing'
-        && request.resource.data.type == 'audio';
+        && request.resource.data.type in ['audio', 'video'];
       allow read: if signedIn()
         && (resource.data.callerId == request.auth.uid || resource.data.calleeId == request.auth.uid);
       allow update: if signedIn()
