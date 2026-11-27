@@ -56,6 +56,8 @@ jobs:
           # Add media upload and remote image rendering dependencies.
           if "com.google.firebase:firebase-storage" not in s:
               s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("com.google.firebase:firebase-storage:21.0.1")', s, count=1)
+          if "io.github.webrtc-sdk:android" not in s:
+              s = re.sub(r'(dependencies\\s*\\{)', r'\\1\\n    implementation("io.github.webrtc-sdk:android:125.6422.07")', s, count=1)
           if "io.coil-kt:coil-compose" not in s:
               s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("io.coil-kt:coil-compose:2.7.0")', s, count=1)
 
@@ -97,7 +99,23 @@ jobs:
           """
 
           p.write_text(s)
-          print("Gradle configuration completed")
+
+          # Add runtime permissions required by WebRTC calling.
+          manifest = Path("app/src/main/AndroidManifest.xml")
+          xml = manifest.read_text()
+          for permission in [
+              "android.permission.INTERNET",
+              "android.permission.RECORD_AUDIO",
+              "android.permission.MODIFY_AUDIO_SETTINGS",
+              "android.permission.CAMERA",
+              "android.permission.BLUETOOTH",
+              "android.permission.BLUETOOTH_CONNECT"
+          ]:
+              tag = f'<uses-permission android:name="{permission}" />'
+              if permission not in xml:
+                  xml = xml.replace("<application", tag + "\\n    <application", 1)
+          manifest.write_text(xml)
+          print("Gradle and calling permissions configured")
           PY
 
       - name: Build APK
