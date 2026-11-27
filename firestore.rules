@@ -17,7 +17,10 @@ service cloud.firestore {
     }
     // Private contact information is owner-only.
     match /users/{userId} {
-      allow create, read, update, delete: if signedIn() && request.auth.uid == userId;
+      allow create, read, delete: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn() && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens', 'phone', 'phoneDigits', 'email', 'createdAt'])
+        && (!('fcmTokens' in request.resource.data) || request.resource.data.fcmTokens is list);
       match /following/{targetUid} {
         allow read: if signedIn() && request.auth.uid == userId;
         allow create, delete: if signedIn() && request.auth.uid == userId && targetUid != userId;
@@ -70,7 +73,10 @@ service cloud.firestore {
     }
     match /reports/{reportId} {
       allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid
-        && request.resource.data.reason is string && request.resource.data.reason.size() <= 1000;
+        && request.resource.data.targetId is string && request.resource.data.targetId != request.auth.uid
+        && request.resource.data.reason is string && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 1000
+        && request.resource.data.status == 'open';
       allow read, update, delete: if isAdmin();
     }
     match /blocks/{userId}/blocked/{blockedUid} {
