@@ -290,324 +290,64 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
     }
 }
 
-private data class FacebookPageItem(val name:String, val url:String)
-
-private val featuredFacebookPages = listOf(
-    FacebookPageItem("প্রথম আলো", "https://www.facebook.com/DailyProthomAlo"),
-    FacebookPageItem("BBC বাংলা", "https://www.facebook.com/BBCBengaliService"),
-    FacebookPageItem("সময় নিউজ", "https://www.facebook.com/somoynews.tv"),
-    FacebookPageItem("The Daily Star", "https://www.facebook.com/dailystarnews"),
-    FacebookPageItem("ICT Division", "https://www.facebook.com/ictdivisionbd"),
-    FacebookPageItem("BDJobs", "https://www.facebook.com/mybdjobs"),
-    FacebookPageItem("বাংলাদেশ পুলিশ", "https://www.facebook.com/BangladeshPoliceOfficialPage"),
-    FacebookPageItem("Daraz", "https://www.facebook.com/DarazBangladesh"),
-    FacebookPageItem("আড়ং", "https://www.facebook.com/BRAC.Aarong"),
-    FacebookPageItem("রকমারি", "https://www.facebook.com/rokomari"),
-    FacebookPageItem("চালডাল", "https://www.facebook.com/chaldalcom"),
-    FacebookPageItem("Foodpanda", "https://www.facebook.com/foodappi"),
-    FacebookPageItem("Rafsan The ChotoBhai", "https://www.facebook.com/RafsanTheChotoBhai"),
-    FacebookPageItem("সালাহউদ্দিন সুমন", "https://www.facebook.com/salahuddinsumon.official"),
-    FacebookPageItem("বাংলাদেশ পর্যটন", "https://www.facebook.com/parjatan.gov.bd"),
-    FacebookPageItem("BCB", "https://www.facebook.com/bcbtigercricket"),
-    FacebookPageItem("Shakib Al Hasan", "https://www.facebook.com/ShakibAlHasan"),
-    FacebookPageItem("N24 Sports", "https://www.facebook.com/n24sports/"),
-    FacebookPageItem("Chorki", "https://www.facebook.com/chorkiofficial"),
-    FacebookPageItem("Tahsan", "https://www.facebook.com/TahsanOfficial"),
-    FacebookPageItem("বিনোদন", "https://www.facebook.com/BangladeshPratidinEntertainment/"),
-    FacebookPageItem("10 Minute School", "https://www.facebook.com/10minuteschool"),
-    FacebookPageItem("Ayman Sadiq", "https://www.facebook.com/aymansadiq10"),
-    FacebookPageItem("TechTunes", "https://www.facebook.com/techtunes")
-)
-
-@Composable
-fun FacebookPageSection() {
-    var selectedPage by remember { mutableStateOf(featuredFacebookPages.first()) }
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp)
-            .background(Cream, RoundedCornerShape(16.dp)).padding(14.dp)
-    ) {
-        Text("Facebook Pages", color=Navy, style=MaterialTheme.typography.titleMedium, fontWeight=FontWeight.Bold)
-        Text("আপনার দেওয়া ২৩টি Facebook Page এক জায়গায় দেখুন।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-            items(featuredFacebookPages) { page ->
-                if (page.url == selectedPage.url) {
-                    Button(
-                        onClick={ selectedPage=page },
-                        colors=ButtonDefaults.buttonColors(containerColor=Green),
-                        contentPadding=PaddingValues(horizontal=13.dp, vertical=7.dp)
-                    ) { Text(page.name, color=Color.White, maxLines=1) }
-                } else {
-                    OutlinedButton(
-                        onClick={ selectedPage=page },
-                        contentPadding=PaddingValues(horizontal=13.dp, vertical=7.dp)
-                    ) { Text(page.name, color=Navy, maxLines=1) }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(selectedPage.name, color=Navy, fontWeight=FontWeight.SemiBold)
-        AndroidView(
-            modifier=Modifier.fillMaxWidth().height(700.dp),
-            factory={ ctx ->
-                android.webkit.WebView(ctx).apply {
-                    settings.javaScriptEnabled=true
-                    settings.domStorageEnabled=true
-                    settings.loadsImagesAutomatically=true
-                    settings.javaScriptCanOpenWindowsAutomatically=false
-                    setBackgroundColor(android.graphics.Color.WHITE)
-                }
-            },
-            update={ webView ->
-                val pluginUrl = "https://www.facebook.com/plugins/page.php?href=${Uri.encode(selectedPage.url)}&tabs=timeline%2Cevents%2Cmessages&width=500&height=700&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true"
-                if (webView.tag != pluginUrl) {
-                    webView.tag=pluginUrl
-                    val html = "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'></head><body style='margin:0;padding:0;overflow-x:hidden'><iframe src='$pluginUrl' width='100%' height='700' style='border:none;overflow:hidden' scrolling='no' frameborder='0' allow='autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share'></iframe></body></html>"
-                    webView.loadDataWithBaseURL("https://www.facebook.com/", html, "text/html", "UTF-8", null)
-                }
-            }
-        )
-        Text("নোট: কোনো Page-এর Plugin Facebook থেকে বন্ধ থাকলে বা Page-এর Embed অনুমতি না থাকলে তার পোস্ট নাও দেখা যেতে পারে।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
-    }
-}
-
-
-private data class SocialProfileItem(val platform:String, val name:String, val url:String)
-
-private val featuredSocialProfiles = listOf(
-    SocialProfileItem("TikTok", "Shakib Al Hasan", "https://www.tiktok.com/@shakibalhasan"),
-    SocialProfileItem("TikTok", "Tahsan Khan", "https://www.tiktok.com/@tahsankhanofficial"),
-    SocialProfileItem("TikTok", "Ayman Sadiq", "https://www.tiktok.com/@aymansadiq10"),
-    SocialProfileItem("TikTok", "Rafsan The ChotoBhai", "https://www.tiktok.com/@rafsanthechotobhai"),
-    SocialProfileItem("TikTok", "Tawhid Afridi", "https://www.tiktok.com/@tawhidafridi"),
-    SocialProfileItem("X", "BCB Tigers", "https://x.com/BCBtigers"),
-    SocialProfileItem("X", "প্রথম আলো", "https://x.com/ProthomAlo"),
-    SocialProfileItem("X", "The Daily Star", "https://x.com/dailystarnews"),
-    SocialProfileItem("X", "Mushfiqur Rahim", "https://x.com/mushfiqur15"),
-    SocialProfileItem("X", "Tamim Iqbal", "https://x.com/TamimOfficial28")
-)
-
-@Composable
-fun SocialProfileSection() {
-    var selected by remember { mutableStateOf(featuredSocialProfiles.first()) }
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp)
-            .background(Cream, RoundedCornerShape(16.dp)).padding(14.dp)
-    ) {
-        Text("TikTok ও X অ্যাকাউন্ট", color=Navy, style=MaterialTheme.typography.titleMedium, fontWeight=FontWeight.Bold)
-        Text("আপনার দেওয়া ১০টি প্রোফাইল থেকে বেছে দেখুন।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-            items(featuredSocialProfiles) { profile ->
-                if (profile.url == selected.url) {
-                    Button(onClick={ selected=profile }, colors=ButtonDefaults.buttonColors(containerColor=Green),
-                        contentPadding=PaddingValues(horizontal=13.dp, vertical=7.dp)) {
-                        Text("${profile.platform}: ${profile.name}", color=Color.White, maxLines=1)
-                    }
-                } else {
-                    OutlinedButton(onClick={ selected=profile },
-                        contentPadding=PaddingValues(horizontal=13.dp, vertical=7.dp)) {
-                        Text("${profile.platform}: ${profile.name}", color=Navy, maxLines=1)
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("${selected.platform} • ${selected.name}", color=Navy, fontWeight=FontWeight.SemiBold)
-        AndroidView(
-            modifier=Modifier.fillMaxWidth().height(650.dp),
-            factory={ ctx ->
-                android.webkit.WebView(ctx).apply {
-                    settings.javaScriptEnabled=true
-                    settings.domStorageEnabled=true
-                    settings.loadsImagesAutomatically=true
-                    settings.javaScriptCanOpenWindowsAutomatically=true
-                    settings.setSupportMultipleWindows(true)
-                    setBackgroundColor(android.graphics.Color.WHITE)
-                }
-            },
-            update={ webView ->
-                if (webView.tag != selected.url) {
-                    webView.tag=selected.url
-                    webView.loadUrl(selected.url)
-                }
-            }
-        )
-        Text("নোট: TikTok বা X-এর লগইন, অঞ্চল বা WebView নীতির কারণে কিছু কনটেন্ট অ্যাপে নাও খুলতে পারে। প্রয়োজনে প্রোফাইলটি ব্রাউজারে খুলুন।",
-            color=Color.Gray, style=MaterialTheme.typography.bodySmall)
-    }
-}
-
-
 private data class DirectoryLink(val platform:String, val url:String) {
     val title:String get() = url.trimEnd('/').substringAfterLast('/').removePrefix("@").ifBlank { url }
 }
 private val allDirectoryLinks = listOf(
-    "https://www.facebook.com/DailyProthomAlo",
-    "https://x.com/ProthomAlo",
-    "https://www.facebook.com/dailystarnews",
-    "https://x.com/dailystarnews",
-    "https://www.facebook.com/BBCBengaliService",
-    "https://x.com/bbcbangla",
-    "https://www.facebook.com/somoynews.tv",
     "https://www.youtube.com/@somoynews360",
-    "https://www.facebook.com/JamunaTelevision",
     "https://www.youtube.com/@JamunaTVbd",
-    "https://www.facebook.com/IndependentTVNews",
-    "https://www.facebook.com/channel24bd.tv",
-    "https://www.facebook.com/ekattor.tv",
-    "https://www.facebook.com/ntvdigital",
-    "https://www.facebook.com/channelionline",
-    "https://www.facebook.com/bdpratidin",
-    "https://www.facebook.com/kalerkantho",
-    "https://www.facebook.com/DainikJugantor",
-    "https://www.facebook.com/dailyittefaq",
-    "https://www.facebook.com/bdnews24",
-    "https://x.com/DhakaTribune",
-    "https://www.facebook.com/tbsnews.net",
-    "https://www.facebook.com/bcbtigercricket",
-    "https://x.com/BCBtigers",
-    "https://www.facebook.com/BFF.Football",
-    "https://www.facebook.com/ShakibAlHasan",
-    "https://www.tiktok.com/@shakibalhasan",
-    "https://x.com/Sah75official",
-    "https://www.facebook.com/TamimOfficial",
-    "https://x.com/TamimOfficial28",
-    "https://www.facebook.com/mushfiqur.official",
-    "https://x.com/mushfiqur15",
-    "https://www.facebook.com/MahmudullahRiyadOfficial",
-    "https://www.facebook.com/MashrafeBinMortazaOfficial",
-    "https://www.facebook.com/LittonKumerDasOfficial",
-    "https://www.facebook.com/TaskinAhmedOfficial",
-    "https://www.facebook.com/MehidyHasanMirazOfficial",
-    "https://www.facebook.com/MustafizurRahmanOfficial",
-    "https://www.facebook.com/JamalBhuyanOfficial",
-    "https://www.facebook.com/tsportsbd",
     "https://www.youtube.com/@TSportsbd",
-    "https://www.facebook.com/chorkiofficial",
     "https://www.youtube.com/@ChorkiOfficial",
-    "https://www.facebook.com/hoichoibd",
-    "https://www.facebook.com/BongoBD",
-    "https://www.facebook.com/TahsanOfficial",
-    "https://www.tiktok.com/@tahsankhanofficial",
-    "https://www.facebook.com/ChanchalChowdhuryOfficial",
-    "https://www.facebook.com/MosharrafKarimOfficial",
-    "https://www.facebook.com/AfranNishoOfficial",
-    "https://www.facebook.com/MehazabienOfficial",
-    "https://www.facebook.com/JoyaAhsanOfficial",
-    "https://www.facebook.com/PoriMoniOfficial",
-    "https://www.facebook.com/SiamAhmedOfficial",
-    "https://www.facebook.com/TanjinTishaOfficial",
-    "https://www.facebook.com/HabibWahidOfficial",
-    "https://www.facebook.com/PritomHasanOfficial",
-    "https://www.facebook.com/artcell",
-    "https://www.facebook.com/warfaze",
-    "https://www.facebook.com/NagarBaulJamesOfficial",
     "https://www.youtube.com/@GSeriesMusic",
     "https://www.youtube.com/@CMVBD",
     "https://www.youtube.com/@SangeetaMusic",
-    "https://www.facebook.com/RafsanTheChotoBhai",
-    "https://www.tiktok.com/@rafsanthechotobhai",
     "https://www.youtube.com/@RafsanTheChotoBhai",
-    "https://www.facebook.com/TawhidAfridiOfficial",
-    "https://www.tiktok.com/@tawhidafridi",
-    "https://www.facebook.com/SalmanMuqtadirOfficial",
-    "https://www.facebook.com/RabaKhanOfficial",
-    "https://www.facebook.com/foodappi",
-    "https://www.facebook.com/petukcouple",
-    "https://www.facebook.com/khaddokhor",
-    "https://www.facebook.com/salahuddinsumon.official",
-    "https://www.facebook.com/nadironthego",
     "https://www.youtube.com/@NadirOnTheGo",
-    "https://www.facebook.com/parjatan.gov.bd",
-    "https://www.facebook.com/EnayetChowdhuryOfficial",
     "https://www.youtube.com/@EnayetChowdhury",
-    "https://www.facebook.com/KhalidFarhanOfficial",
     "https://www.youtube.com/@KhalidFarhan",
-    "https://www.facebook.com/10minuteschool",
     "https://www.youtube.com/@10MinuteSchoolMain",
-    "https://www.facebook.com/aymansadiq10",
-    "https://www.tiktok.com/@aymansadiq10",
-    "https://www.facebook.com/MunzereenShahidOfficial",
     "https://www.youtube.com/@MunzereenShahid",
-    "https://www.facebook.com/shikhobd",
-    "https://www.facebook.com/bohubrihi",
     "https://www.youtube.com/@OnnoRokomPathshala",
-    "https://www.facebook.com/techtunes",
-    "https://www.facebook.com/pcbuilderbd",
     "https://www.youtube.com/@SamZonebd",
     "https://www.youtube.com/@ATCofficial",
-    "https://www.youtube.com/@SohanurRahman",
-    "https://www.facebook.com/JhankarMahbubOfficial",
-    "https://www.facebook.com/programmingHero",
-    "https://www.facebook.com/DarazBangladesh",
-    "https://www.facebook.com/BRAC.Aarong",
-    "https://www.facebook.com/rokomari",
-    "https://www.facebook.com/chaldalcom",
-    "https://www.facebook.com/pickaboocom",
-    "https://www.facebook.com/othobabd",
-    "https://www.facebook.com/shopupbd",
-    "https://www.facebook.com/pathaobd",
-    "https://www.facebook.com/bkashlimited",
-    "https://www.facebook.com/MyNagad",
-    "https://www.facebook.com/Grameenphone",
-    "https://www.facebook.com/RobiFanz",
-    "https://www.facebook.com/banglalinkmela",
-    "https://www.facebook.com/BataBangladesh",
-    "https://www.facebook.com/apexfootwear",
-    "https://www.facebook.com/yellowclothing",
-    "https://www.facebook.com/ictdivisionbd",
-    "https://www.facebook.com/mybdjobs",
-    "https://www.facebook.com/BangladeshPoliceOfficialPage",
-    "https://www.facebook.com/bdarmy.army.mil.bd",
-    "https://www.facebook.com/a2iBangladesh",
-    "https://www.facebook.com/nhd999",
-    "https://www.facebook.com/BangladeshBankOfficial",
-    "https://www.facebook.com/dmpdhaka",
-    "https://www.facebook.com/bmd.gov.bd",
-    "https://www.facebook.com/chakrirkhoborbd"
-).distinct().map { url ->
-    DirectoryLink(when {
-        url.contains("youtube.com") -> "YouTube"
-        url.contains("tiktok.com") -> "TikTok"
-        url.contains("x.com") -> "X"
-        else -> "Facebook"
-    }, url)
-}
+    "https://www.youtube.com/@SohanurRahman"
+).map { url -> DirectoryLink("YouTube", url) }
 
 @Composable
 fun SocialDirectorySection() {
-    var platform by remember { mutableStateOf("সব") }
     var selected by remember { mutableStateOf(allDirectoryLinks.first()) }
-    val visible = if (platform == "সব") allDirectoryLinks else allDirectoryLinks.filter { it.platform == platform }
     Column(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp).background(Cream, RoundedCornerShape(16.dp)).padding(14.dp)) {
-        Text("বাংলাদেশি মিডিয়া ও সার্ভিস ডিরেক্টরি", color=Navy, style=MaterialTheme.typography.titleMedium, fontWeight=FontWeight.Bold)
-        Text(allDirectoryLinks.size.toString() + "টি লিংক • Facebook, X, TikTok ও YouTube", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-            items(listOf("সব", "Facebook", "X", "TikTok", "YouTube")) { item ->
-                if (platform == item) Button(onClick={ platform=item }, contentPadding=PaddingValues(horizontal=12.dp, vertical=6.dp)) { Text(item) }
-                else OutlinedButton(onClick={ platform=item }, contentPadding=PaddingValues(horizontal=12.dp, vertical=6.dp)) { Text(item) }
-            }
-        }
+        Text("ভিডিও ও মিডিয়া ডিরেক্টরি", color=Navy, style=MaterialTheme.typography.titleMedium, fontWeight=FontWeight.Bold)
+        Text(allDirectoryLinks.size.toString() + "টি YouTube চ্যানেল", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         LazyColumn(Modifier.fillMaxWidth().heightIn(max=260.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            items(visible) { link ->
+            items(allDirectoryLinks) { link ->
                 TextButton(onClick={ selected=link }, modifier=Modifier.fillMaxWidth(), contentPadding=PaddingValues(horizontal=8.dp, vertical=4.dp)) {
-                    Text(link.platform + " • " + link.title, modifier=Modifier.weight(1f), color=if(selected.url==link.url) Green else Navy, maxLines=1)
+                    Text(link.title, modifier=Modifier.weight(1f), color=if(selected.url==link.url) Green else Navy, maxLines=1)
                     Text("খুলুন", color=Green)
                 }
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text(selected.platform + " • " + selected.title, color=Navy, fontWeight=FontWeight.SemiBold)
-        AndroidView(modifier=Modifier.fillMaxWidth().height(620.dp), factory={ ctx ->
+        Text("YouTube • " + selected.title, color=Navy, fontWeight=FontWeight.SemiBold)
+        AndroidView(modifier=Modifier.fillMaxWidth().height(520.dp), factory={ ctx ->
             android.webkit.WebView(ctx).apply {
                 settings.javaScriptEnabled=true
                 settings.domStorageEnabled=true
                 settings.loadsImagesAutomatically=true
-                settings.javaScriptCanOpenWindowsAutomatically=true
-                settings.setSupportMultipleWindows(true)
+                settings.javaScriptCanOpenWindowsAutomatically=false
+                settings.setSupportMultipleWindows(false)
+                webViewClient = object : android.webkit.WebViewClient() {
+                    private val allowedHosts = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be", "youtube-nocookie.com", "www.youtube-nocookie.com", "ytimg.com", "i.ytimg.com", "googlevideo.com")
+                    override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                        val host = request?.url?.host?.lowercase() ?: return true
+                        return allowedHosts.none { host == it || host.endsWith(".$it") }
+                    }
+                    override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, url: String?): Boolean {
+                        val host = android.net.Uri.parse(url ?: return true).host?.lowercase() ?: return true
+                        return allowedHosts.none { host == it || host.endsWith(".$it") }
+                    }
+                }
                 setBackgroundColor(android.graphics.Color.WHITE)
             }
         }, update={ webView ->
@@ -616,7 +356,7 @@ fun SocialDirectorySection() {
                 webView.loadUrl(selected.url)
             }
         })
-        Text("নোট: কিছু সাইট লগইন, অঞ্চল বা WebView নীতির কারণে অ্যাপের ভেতরে সীমাবদ্ধ থাকতে পারে।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
+        Text("এই তালিকায় শুধু YouTube চ্যানেল রাখা হয়েছে। Facebook, TikTok ও X লিংক সরানো হয়েছে; অন্য সাইটে বা Facebook অ্যাপে স্বয়ংক্রিয়ভাবে যাবে না।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -705,8 +445,6 @@ fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
                     }
                 }
             }
-            item { FacebookPageSection() }
-            item { SocialProfileSection() }
             item { SocialDirectorySection() }
             if (error.isNotBlank()) item { Text(error, color=MaterialTheme.colorScheme.error, modifier=Modifier.padding(12.dp)) }
             if (posts.isEmpty()) {
