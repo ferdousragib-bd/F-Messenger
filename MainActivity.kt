@@ -271,7 +271,7 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
             horizontalArrangement=Arrangement.SpaceEvenly,
             verticalAlignment=Alignment.CenterVertically
         ) {
-            listOf("হোম" to "⌂", "ফিড" to "▤", "খুঁজুন" to "⌕", "চ্যাট" to "✉", "প্রোফাইল" to "♙").forEach { (item, glyph) ->
+            (listOf("হোম" to "⌂", "ফিড" to "▤", "খুঁজুন" to "⌕", "চ্যাট" to "✉", "প্রোফাইল" to "♙") + if (isAdmin) listOf("অ্যাডমিন" to "⚙") else emptyList()).forEach { (item, glyph) ->
                 Column(
                     Modifier.weight(1f).clickable { tab=item }.padding(vertical=5.dp),
                     horizontalAlignment=Alignment.CenterHorizontally
