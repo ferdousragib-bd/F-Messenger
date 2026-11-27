@@ -100,7 +100,7 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
     val scope= rememberCoroutineScope()
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement=Arrangement.Center) {
         Box(Modifier.size(72.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text("F",color=Color.White,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)}
-        Spacer(Modifier.height(14.dp)); Text("F Messenger",style=MaterialTheme.typography.headlineMedium,color=Navy,fontWeight=FontWeight.Bold)
+        Spacer(Modifier.height(14.dp)); Text("Pasha অ্যাপ",style=MaterialTheme.typography.headlineMedium,color=Navy,fontWeight=FontWeight.Bold)
         Text(if(register) "সবার জন্য সামাজিক যোগাযোগ" else "আপনার মানুষের সঙ্গে যুক্ত থাকুন",color=Color.Gray)
         Spacer(Modifier.height(18.dp))
         if(register){ OutlinedTextField(name,{name=it},label={Text("আপনার নাম")},modifier=Modifier.fillMaxWidth()); OutlinedTextField(username,{username=it.lowercase().replace(" ","")},label={Text("Username")},modifier=Modifier.fillMaxWidth()); OutlinedTextField(phone,{phone=it},label={Text("ফোন নম্বর")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),modifier=Modifier.fillMaxWidth()) }
@@ -133,7 +133,7 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
     var tab by remember { mutableStateOf("ফিড") }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=16.dp,vertical=13.dp),verticalAlignment=Alignment.CenterVertically){
-            Column(Modifier.weight(1f)){Text("F Messenger",color=Color.White,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text("Connect • Share • Discover",color=Color(0xFFD8E8FF),style=MaterialTheme.typography.labelSmall)}
+            Column(Modifier.weight(1f)){Text("Pasha অ্যাপ",color=Color.White,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text("Connect • Share • Discover",color=Color(0xFFD8E8FF),style=MaterialTheme.typography.labelSmall)}
             TextButton(onClick=onSignOut){Text("লগআউট",color=Color.White)}
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -174,7 +174,7 @@ fun FeedScreen() {
                     busy=true;error=""
                     try {
                         // Avoid a profile document read before posting; it fails immediately when Firestore is offline.
-                        val authorName=auth.currentUser?.displayName?.takeIf{it.isNotBlank()} ?: "ব্যবহারকারী"
+                        val authorName=db.collection("publicProfiles").document(uid).get().await().getString("name")?.takeIf{it.isNotBlank()} ?: "ব্যবহারকারী"
                         var url="";var type="text"
                         if(picked!=null){type=pickedType;val fileName="${System.currentTimeMillis()}_${if(type=="video")"video.mp4" else "image.jpg"}";val ref=storage.reference.child("post-media/$uid/$fileName");url=ref.putFile(picked!!).await().storage.downloadUrl.await().toString()}
                         db.collection("posts").add(mapOf("authorId" to uid,"authorName" to authorName,"authorUsername" to "","caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
@@ -626,7 +626,7 @@ private fun IncomingCallHost() {
     )
     if (CallCoordinator.activeCallId != null) AlertDialog(
         onDismissRequest = { CallCoordinator.endCall() },
-        title = { Text("F Messenger কল") },
+        title = { Text("Pasha অ্যাপ কল") },
         text = { Column { Text(CallCoordinator.remoteName); Text(CallCoordinator.callStatus) } },
         confirmButton = { TextButton(onClick = { CallCoordinator.endCall() }) { Text("কল কেটে দিন") } }
     )
