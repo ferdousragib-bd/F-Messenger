@@ -33,6 +33,7 @@ jobs:
       - name: Extract project
         run: |
           unzip -o FMessenger-Android-Project.zip -d source
+          cp MainActivity.kt source/FMessenger/app/src/main/java/com/fmessenger/chat/MainActivity.kt
 
       - name: Fix MainActivity and Gradle
         working-directory: source/FMessenger
@@ -64,6 +65,12 @@ jobs:
           # Fix Gradle configuration
           p = Path("app/build.gradle.kts")
           s = p.read_text()
+
+          # Add media upload and remote image rendering dependencies.
+          if "com.google.firebase:firebase-storage" not in s:
+              s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("com.google.firebase:firebase-storage:21.0.1")', s, count=1)
+          if "io.coil-kt:coil-compose" not in s:
+              s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("io.coil-kt:coil-compose:2.7.0")', s, count=1)
 
           if "org.jetbrains.kotlin.plugin.compose" not in s:
               s, count = re.subn(
