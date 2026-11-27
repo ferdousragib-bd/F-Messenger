@@ -126,7 +126,7 @@ jobs:
               tag = f'<uses-permission android:name="{permission}" />'
               if permission not in xml:
                   xml = xml.replace("<application", tag + "\\n    <application", 1)
-          xml = xml.replace('android:label="F Messenger"', 'android:label="Pasha অ্যাপ"')
+          xml = xml.replace('android:label="Pasha অ্যাপ"', 'android:label="F Messenger"')
           if "android:icon=" not in xml:
               xml = xml.replace("<application", '<application android:icon="@drawable/pasha_icon"', 1)
           manifest.write_text(xml)
