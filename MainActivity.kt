@@ -1128,14 +1128,17 @@ private object CallCoordinator {
     }
 
     private fun createPeer(context: Context, callId: String, caller: Boolean, onReady: (PeerConnection?) -> Unit) {
-        // Free no-VPS mode: use public STUN servers for direct peer-to-peer connectivity.
-        // Some carrier-grade NAT / restrictive networks require a TURN relay and may fail.
-        val stunOnly = listOf(
+        // Free STUN + Metered Open Relay TURN fallback (20 GB/month free quota).
+        // Shared demo credentials are best-effort, not a production SLA or private credentials.
+        val iceServers = listOf(
             IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-            IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+            IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+            IceServer.builder("turn:openrelay.metered.ca:80?transport=udp").setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
+            IceServer.builder("turn:openrelay.metered.ca:80?transport=tcp").setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
+            IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp").setUsername("openrelayproject").setPassword("openrelayproject").createIceServer()
         )
-        callStatus = "সরাসরি নেটওয়ার্ক সংযোগের চেষ্টা চলছে..."
-        createPeerWithIceServers(context, callId, caller, stunOnly, onReady)
+        callStatus = "STUN/TURN নেটওয়ার্ক সংযোগের চেষ্টা চলছে..."
+        createPeerWithIceServers(context, callId, caller, iceServers, onReady)
     }
 
     private fun createPeerWithIceServers(
