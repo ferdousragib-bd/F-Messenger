@@ -122,7 +122,7 @@ fun FeedScreen() {
     val scope= rememberCoroutineScope(); val context= LocalContext.current
     var picked by remember { mutableStateOf<Uri?>(null) }; var pickedType by remember { mutableStateOf("image") }
     val picker= rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){ uri-> picked=uri }
-    DisposableEffect(Unit){val l:ListenerRegistration=db.collection("posts").orderBy("createdAt",Query.Direction.DESCENDING).limit(60).addSnapshotListener{snap,e->if(e==null)posts=snap?.documents?.mapNotNull{d->d.toObject(FeedPost::class.java)?.copy(id=d.id)}?: emptyList() else error=e.localizedMessage?: "ফিড লোড হয়নি"};onDispose{l.remove()}}
+    DisposableEffect(Unit){val l:ListenerRegistration=db.collection("posts").whereEqualTo("visibility","public").orderBy("createdAt",Query.Direction.DESCENDING).limit(60).addSnapshotListener{snap,e->if(e==null)posts=snap?.documents?.mapNotNull{d->d.toObject(FeedPost::class.java)?.copy(id=d.id)}?: emptyList() else error=e.localizedMessage?: "ফিড লোড হয়নি"};onDispose{l.remove()}}
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(12.dp).background(Color.White,RoundedCornerShape(16.dp)).padding(12.dp)){
             Text("নতুন পোস্ট লিখুন",fontWeight=FontWeight.Bold,color=Navy)
@@ -185,7 +185,7 @@ fun CommentsDialog(postId:String,onClose:()->Unit) {
 @Composable
 fun ReelsScreen() {
     var videos by remember{mutableStateOf(listOf<FeedPost>())};var error by remember{mutableStateOf("")}
-    DisposableEffect(Unit){val l=db.collection("posts").whereEqualTo("mediaType","video").orderBy("createdAt",Query.Direction.DESCENDING).limit(40).addSnapshotListener{snap,e->if(e==null)videos=snap?.documents?.mapNotNull{d->d.toObject(FeedPost::class.java)?.copy(id=d.id)}?:emptyList() else error=e.localizedMessage?: "ভিডিও লোড হয়নি"};onDispose{l.remove()}}
+    DisposableEffect(Unit){val l=db.collection("posts").whereEqualTo("visibility","public").whereEqualTo("mediaType","video").orderBy("createdAt",Query.Direction.DESCENDING).limit(40).addSnapshotListener{snap,e->if(e==null)videos=snap?.documents?.mapNotNull{d->d.toObject(FeedPost::class.java)?.copy(id=d.id)}?:emptyList() else error=e.localizedMessage?: "ভিডিও লোড হয়নি"};onDispose{l.remove()}}
     if(error.isNotBlank())Text(error)
     else if(videos.isEmpty())Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("এখনো কোনো রিলস নেই। ফিড থেকে ভিডিও পোস্ট করুন।",color=Color.Gray)}
     else LazyColumn{items(videos,key={it.id}){p->Column(Modifier.fillMaxWidth().padding(10.dp).background(Color.Black,RoundedCornerShape(16.dp)).padding(10.dp)){VideoPlayer(p.mediaUrl);Text(p.authorName,color=Color.White,fontWeight=FontWeight.Bold);Text(p.caption,color=Color.White)}}}
