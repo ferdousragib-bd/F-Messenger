@@ -26,6 +26,14 @@ The service account needs permission to deploy Firebase Security Rules and manag
 
 Open **Actions → Deploy F Messenger Firebase Rules → Run workflow**. Wait for the run to finish successfully. This deploys Firestore rules, Firestore indexes, and Storage rules only; it does not enable Authentication providers.
 
+## Deploy the updated profile privacy rules and indexes
+
+The latest app adds profile bio, avatar/cover image URLs, and public/private profile visibility. To enforce private-profile reads and support public-profile discovery:
+
+1. Deploy the updated `firestore.rules` and `firestore.indexes.json` from GitHub Actions → **Deploy F Messenger Firebase Rules** → **Run workflow**.
+2. This workflow requires the repository secrets listed above. If those secrets are not configured, open Firebase Console → Firestore Database → Rules and publish the contents of `firestore.rules`; create the composite indexes listed in `firestore.indexes.json` under Firestore → Indexes.
+3. Do not treat private profiles as protected until the updated Firestore rules have finished deploying.
+
 ## Before public launch
 
 - Authentication → Sign-in method → **Email/Password** is enabled.
