@@ -146,7 +146,7 @@ fun FeedScreen() {
                         val user=db.collection("publicProfiles").document(uid).get().await().toObject(Person::class.java)
                         var url="";var type="text"
                         if(picked!=null){type=pickedType;val ref=storage.reference.child("post-media/$uid/${System.currentTimeMillis()}_${if(type=="video")"video.mp4" else "image.jpg"}");url=ref.putFile(picked!!).await().storage.downloadUrl.await().toString()}
-                        db.collection("posts").add(mapOf("authorId" to uid,"authorName" to (user?.name?:auth.currentUser?.email?: "ব্যবহারকারী"),"authorUsername" to (user?.username?:""),"caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
+                        db.collection("posts").add(mapOf("authorId" to uid,"authorName" to (user?.name?.takeIf{it.isNotBlank()}?: "ব্যবহারকারী"),"authorUsername" to (user?.username?:""),"caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
                         caption="";picked=null
                     }catch(e:Exception){error=e.localizedMessage?: "পোস্ট করা যায়নি"};busy=false
                 }}){Text(if(busy)"আপলোড..." else "পোস্ট করুন")}
@@ -187,7 +187,7 @@ fun CommentsDialog(postId:String,onClose:()->Unit) {
     AlertDialog(onDismissRequest=onClose,title={Text("মন্তব্য")},text={Column(Modifier.heightIn(max=360.dp)){
         LazyColumn(Modifier.weight(1f,false)){items(list){Text("${it.authorName}: ${it.text}",modifier=Modifier.padding(vertical=5.dp))}}
         OutlinedTextField(draft,{draft=it},label={Text("মন্তব্য লিখুন")},modifier=Modifier.fillMaxWidth())
-    }},confirmButton={TextButton(onClick={val text=draft.trim();if(text.isNotBlank())scope.launch{try{val me=db.collection("users").document(uid).get().await().toObject(Person::class.java);db.collection("posts").document(postId).collection("comments").add(mapOf("authorId" to uid,"authorName" to (me?.name?: "ব্যবহারকারী"),"text" to text,"createdAt" to System.currentTimeMillis())).await();draft=""}catch(_:Exception){}}}){Text("পাঠান")}},dismissButton={TextButton(onClick=onClose){Text("বন্ধ")}})
+    }},confirmButton={TextButton(onClick={val text=draft.trim();if(text.isNotBlank())scope.launch{try{val me=db.collection("publicProfiles").document(uid).get().await().toObject(Person::class.java);db.collection("posts").document(postId).collection("comments").add(mapOf("authorId" to uid,"authorName" to (me?.name?: "ব্যবহারকারী"),"text" to text,"createdAt" to System.currentTimeMillis())).await();draft=""}catch(_:Exception){}}}){Text("পাঠান")}},dismissButton={TextButton(onClick=onClose){Text("বন্ধ")}})
 }
 
 @Composable
