@@ -699,7 +699,9 @@ fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
                     }
                 }
             }
-            item { FacebookPageSection() }\n            item { SocialProfileSection() }
+            item { FacebookPageSection() }
+            item { SocialProfileSection() }
+            item { SocialDirectorySection() }
             if (error.isNotBlank()) item { Text(error, color=MaterialTheme.colorScheme.error, modifier=Modifier.padding(12.dp)) }
             if (posts.isEmpty()) {
                 item {
