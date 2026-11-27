@@ -61,7 +61,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
@@ -1129,33 +1128,14 @@ private object CallCoordinator {
     }
 
     private fun createPeer(context: Context, callId: String, caller: Boolean, onReady: (PeerConnection?) -> Unit) {
-        // Request short-lived TURN credentials from the authenticated Firebase callable.
-        // Never ship static TURN usernames/passwords inside the APK or source repository.
+        // Free no-VPS mode: use public STUN servers for direct peer-to-peer connectivity.
+        // Some carrier-grade NAT / restrictive networks require a TURN relay and may fail.
         val stunOnly = listOf(
             IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
         )
-        callStatus = "নিরাপদ কল সার্ভার প্রস্তুত করা হচ্ছে..."
-        FirebaseFunctions.getInstance().getHttpsCallable("getTurnCredentials").call()
-            .addOnSuccessListener { result ->
-                val data = result.getData() as? Map<*, *>
-                val urls = (data?.get("urls") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-                val username = data?.get("username") as? String
-                val credential = data?.get("credential") as? String
-                val servers = mutableListOf<IceServer>().apply { addAll(stunOnly) }
-                if (urls.isNotEmpty() && !username.isNullOrBlank() && !credential.isNullOrBlank()) {
-                    urls.forEach { url ->
-                        servers.add(IceServer.builder(url).setUsername(username).setPassword(credential).createIceServer())
-                    }
-                }
-                callStatus = if (servers.size > stunOnly.size) "নিরাপদ TURN সংযোগ প্রস্তুত" else "সরাসরি নেটওয়ার্ক সংযোগের চেষ্টা"
-                createPeerWithIceServers(context, callId, caller, servers, onReady)
-            }
-            .addOnFailureListener {
-                // Keep direct peer-to-peer calling available when TURN is not configured.
-                callStatus = "TURN সার্ভার পাওয়া যায়নি; সরাসরি সংযোগের চেষ্টা চলছে"
-                createPeerWithIceServers(context, callId, caller, stunOnly, onReady)
-            }
+        callStatus = "সরাসরি নেটওয়ার্ক সংযোগের চেষ্টা চলছে..."
+        createPeerWithIceServers(context, callId, caller, stunOnly, onReady)
     }
 
     private fun createPeerWithIceServers(
