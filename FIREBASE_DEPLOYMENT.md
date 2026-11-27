@@ -46,14 +46,16 @@ The latest app adds profile bio, avatar/cover image URLs, and public/private pro
 A successful Android APK build does not prove that Firebase services are configured correctly. End-to-end testing against the intended Firebase project is still required.
 
 
-## Free no-VPS mode (current recommended setup)
+## Free voice/video calling mode (no VPS)
 
-The Android client can make direct WebRTC connection attempts using Google's public STUN servers without a self-hosted TURN VPS. This keeps the app on the Firebase Spark plan for Auth, Firestore, and Storage within their free quotas. It does **not** guarantee calls on every mobile carrier or NAT: restrictive networks may require a TURN relay.
+The Android WebRTC client now tries Google's STUN servers and Metered Open Relay's public TURN relay as a fallback. Open Relay advertises a free allowance of 20 GB of relayed traffic per month and supports common UDP/TCP/TLS ports. See the provider's current terms and setup at https://www.metered.ca/tools/openrelay/ . The app uses the provider's published shared demo credentials, so this is a best-effort free fallback, not a private production credential or a guarantee of every network. The free relay quota may be exhausted or the public credentials/service may change.
 
-In this no-VPS mode:
-- Do not configure `TURN_SHARED_SECRET` or `TURN_URLS` and do not run the TURN deployment workflow.
-- Do not expect the `getTurnCredentials` callable or server-triggered Cloud Functions notifications to work unless Functions are separately deployed on an eligible billing plan.
-- Firestore and Storage rules still need to be published to the Firebase project. This can be done manually in Firebase Console by copying the repository's `firestore.rules` into Firestore → Rules and `storage.rules` into Storage → Rules, then publishing. Create the composite indexes from `firestore.indexes.json` when Firestore reports they are required.
+The app now has separate voice-call and video-call buttons. Video calls request microphone and camera permission, send a WebRTC camera video track, and render the remote video inside the call screen. Both users need a recent APK containing this update and must grant the requested permissions.
+
+- Firebase Spark can still be used for Authentication, Firestore and Storage within their free quotas; TURN media traffic is provided separately by Open Relay.
+- No Firebase Cloud Functions deployment or TURN VPS is required for this free fallback.
+- Do not put private TURN shared secrets in the Android APK. For a public launch or predictable service, use private expiring TURN credentials and a managed/owned TURN service with a suitable quota/SLA.
+- Firestore and Storage rules still need to be published to the Firebase project. Copy `firestore.rules` into Firestore → Rules and `storage.rules` into Storage → Rules, then publish. Create the composite indexes from `firestore.indexes.json` when Firestore reports they are required.
 - Enable Email/Password in Firebase Authentication → Sign-in method.
 
-For reliable calls across restrictive networks, add a paid TURN VPS later and deploy the callable credential function. Never put TURN shared secrets in the Android app.
+Important: TURN improves connectivity through restrictive NAT/firewalls but cannot promise 100% availability. Video relay consumes substantially more data than voice; monitor the provider's monthly quota.
