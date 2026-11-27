@@ -9,6 +9,7 @@ import com.google.firebase.auth.PhoneAuthCredential
 import java.util.concurrent.TimeUnit
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import org.webrtc.AudioSource
@@ -215,6 +216,23 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
         ) {
             Text(if (isRegister) "আগে অ্যাকাউন্ট আছে? লগইন করুন" else "নতুন অ্যাকাউন্ট খুলুন")
         }
+        if (!isRegister) {
+            TextButton(
+                enabled = !busy && email.contains("@"),
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                onClick = {
+                    busy = true; error = ""; info = ""
+                    scope.launch {
+                        try {
+                            auth.sendPasswordResetEmail(email.trim()).await()
+                            info = "পাসওয়ার্ড রিসেটের লিংক ইমেইলে পাঠানো হয়েছে। ইনবক্স/স্প্যাম ফোল্ডার দেখুন।"
+                        } catch (e: Exception) {
+                            error = e.localizedMessage ?: "রিসেট ইমেইল পাঠানো যায়নি"
+                        } finally { busy = false }
+                    }
+                }
+            ) { Text("পাসওয়ার্ড ভুলে গেছেন? রিসেট করুন") }
+        }
         Text("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে। ফোনে SMS পাঠানো হয় না, তাই SMS Billing লাগবে না।", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -420,17 +438,53 @@ fun FeedScreen() {
 
 @Composable
 fun PostCard(post:FeedPost) {
-    val uid=auth.currentUser?.uid?:return; var liked by remember(post.id){mutableStateOf(false)};var likes by remember(post.id){mutableIntStateOf(0)};var showComments by remember{mutableStateOf(false)}
+    val uid=auth.currentUser?.uid?:return
+    val context= LocalContext.current
+    val scope= rememberCoroutineScope()
+    var liked by remember(post.id){mutableStateOf(false)}
+    var likes by remember(post.id){mutableIntStateOf(0)}
+    var showComments by remember{mutableStateOf(false)}
+    var editing by remember{mutableStateOf(false)}
+    var editText by remember(post.id){mutableStateOf(post.caption)}
+    var status by remember{mutableStateOf("")}
+    var showDelete by remember{mutableStateOf(false)}
     LaunchedEffect(post.id){try{liked=db.collection("posts").document(post.id).collection("likes").document(uid).get().await().exists();likes=db.collection("posts").document(post.id).collection("likes").get().await().size()}catch(_:Exception){}}
     Column(Modifier.fillMaxWidth().padding(horizontal=12.dp).background(Color.White,RoundedCornerShape(16.dp)).padding(12.dp)){
-        Row(verticalAlignment=Alignment.CenterVertically){Box(Modifier.size(38.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text(post.authorName.take(1).uppercase(),color=Color.White,fontWeight=FontWeight.Bold)};Spacer(Modifier.width(9.dp));Column{Text(post.authorName,fontWeight=FontWeight.Bold,color=Navy);Text("@${post.authorUsername}",style=MaterialTheme.typography.labelSmall,color=Color.Gray)}}
+        Row(verticalAlignment=Alignment.CenterVertically){
+            Box(Modifier.size(38.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text(post.authorName.take(1).uppercase(),color=Color.White,fontWeight=FontWeight.Bold)}
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)){Text(post.authorName,fontWeight=FontWeight.Bold,color=Navy);Text("@${post.authorUsername}",style=MaterialTheme.typography.labelSmall,color=Color.Gray)}
+            if(post.authorId==uid){
+                TextButton(onClick={editing=true;editText=post.caption}){Text("সম্পাদনা")}
+                TextButton(onClick={showDelete=true}){Text("মুছুন",color=MaterialTheme.colorScheme.error)}
+            }
+        }
         if(post.caption.isNotBlank()){Spacer(Modifier.height(10.dp));Text(post.caption,color=Color(0xFF263445))}
         if(post.mediaUrl.isNotBlank()){Spacer(Modifier.height(8.dp));if(post.mediaType=="video") VideoPlayer(post.mediaUrl) else AsyncImage(model=post.mediaUrl,contentDescription="পোস্টের ছবি",modifier=Modifier.fillMaxWidth().heightIn(max=360.dp))}
+        if(status.isNotBlank()) Text(status,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
         Row(verticalAlignment=Alignment.CenterVertically){
             TextButton(onClick={val ref=db.collection("posts").document(post.id).collection("likes").document(uid);if(liked){ref.delete();liked=false;likes=(likes-1).coerceAtLeast(0)}else{ref.set(mapOf("userId" to uid,"createdAt" to System.currentTimeMillis()));liked=true;likes++}}){Text(if(liked)"♥ পছন্দ হয়েছে" else "♡ লাইক  •  $likes",color=if(liked)Blue else Navy)}
             TextButton(onClick={showComments=true}){Text("মন্তব্য")}
+            TextButton(onClick={
+                val send=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,"${post.caption}\nF Messenger পোস্ট")}
+                context.startActivity(Intent.createChooser(send,"পোস্ট শেয়ার করুন"))
+            }){Text("শেয়ার")}
         }
     }
+    if(editing) AlertDialog(
+        onDismissRequest={editing=false},
+        title={Text("পোস্ট সম্পাদনা")},
+        text={OutlinedTextField(editText,{editText=it},modifier=Modifier.fillMaxWidth(),minLines=3)},
+        confirmButton={TextButton(onClick={scope.launch{try{db.collection("posts").document(post.id).update("caption",editText.trim(),"updatedAt",System.currentTimeMillis()).await();editing=false}catch(e:Exception){status=e.localizedMessage?: "আপডেট হয়নি"}}}){Text("সংরক্ষণ")}},
+        dismissButton={TextButton(onClick={editing=false}){Text("বাতিল")}}
+    )
+    if(showDelete) AlertDialog(
+        onDismissRequest={showDelete=false},
+        title={Text("পোস্ট মুছে ফেলবেন?")},
+        text={Text("এই কাজটি ফিরিয়ে আনা যাবে না।")},
+        confirmButton={TextButton(onClick={scope.launch{try{db.collection("posts").document(post.id).delete().await();showDelete=false}catch(e:Exception){status=e.localizedMessage?: "মুছতে পারেনি"}}}){Text("মুছে ফেলুন",color=MaterialTheme.colorScheme.error)}},
+        dismissButton={TextButton(onClick={showDelete=false}){Text("বাতিল")}}
+    )
     if(showComments) CommentsDialog(post.id){showComments=false}
 }
 
