@@ -365,6 +365,73 @@ fun FacebookPageSection() {
     }
 }
 
+
+private data class SocialProfileItem(val platform:String, val name:String, val url:String)
+
+private val featuredSocialProfiles = listOf(
+    SocialProfileItem("TikTok", "Shakib Al Hasan", "https://www.tiktok.com/@shakibalhasan"),
+    SocialProfileItem("TikTok", "Tahsan Khan", "https://www.tiktok.com/@tahsankhanofficial"),
+    SocialProfileItem("TikTok", "Ayman Sadiq", "https://www.tiktok.com/@aymansadiq10"),
+    SocialProfileItem("TikTok", "Rafsan The ChotoBhai", "https://www.tiktok.com/@rafsanthechotobhai"),
+    SocialProfileItem("TikTok", "Tawhid Afridi", "https://www.tiktok.com/@tawhidafridi"),
+    SocialProfileItem("X", "BCB Tigers", "https://x.com/BCBtigers"),
+    SocialProfileItem("X", "প্রথম আলো", "https://x.com/ProthomAlo"),
+    SocialProfileItem("X", "The Daily Star", "https://x.com/dailystarnews"),
+    SocialProfileItem("X", "Mushfiqur Rahim", "https://x.com/mushfiqur15"),
+    SocialProfileItem("X", "Tamim Iqbal", "https://x.com/TamimOfficial28")
+)
+
+@Composable
+fun SocialProfileSection() {
+    var selected by remember { mutableStateOf(featuredSocialProfiles.first()) }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp)
+            .background(Cream, RoundedCornerShape(16.dp)).padding(14.dp)
+    ) {
+        Text("TikTok ও X অ্যাকাউন্ট", color=Navy, style=MaterialTheme.typography.titleMedium, fontWeight=FontWeight.Bold)
+        Text("আপনার দেওয়া ১০টি প্রোফাইল থেকে বেছে দেখুন।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            items(featuredSocialProfiles) { profile ->
+                if (profile.url == selected.url) {
+                    Button(onClick={ selected=profile }, colors=ButtonDefaults.buttonColors(containerColor=Green),
+                        contentPadding=PaddingValues(horizontal=13.dp, vertical=7.dp)) {
+                        Text("${profile.platform}: ${profile.name}", color=Color.White, maxLines=1)
+                    }
+                } else {
+                    OutlinedButton(onClick={ selected=profile },
+                        contentPadding=PaddingValues(horizontal=13.dp, vertical=7.dp)) {
+                        Text("${profile.platform}: ${profile.name}", color=Navy, maxLines=1)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("${selected.platform} • ${selected.name}", color=Navy, fontWeight=FontWeight.SemiBold)
+        AndroidView(
+            modifier=Modifier.fillMaxWidth().height(650.dp),
+            factory={ ctx ->
+                android.webkit.WebView(ctx).apply {
+                    settings.javaScriptEnabled=true
+                    settings.domStorageEnabled=true
+                    settings.loadsImagesAutomatically=true
+                    settings.javaScriptCanOpenWindowsAutomatically=true
+                    settings.setSupportMultipleWindows(true)
+                    setBackgroundColor(android.graphics.Color.WHITE)
+                }
+            },
+            update={ webView ->
+                if (webView.tag != selected.url) {
+                    webView.tag=selected.url
+                    webView.loadUrl(selected.url)
+                }
+            }
+        )
+        Text("নোট: TikTok বা X-এর লগইন, অঞ্চল বা WebView নীতির কারণে কিছু কনটেন্ট অ্যাপে নাও খুলতে পারে। প্রয়োজনে প্রোফাইলটি ব্রাউজারে খুলুন।",
+            color=Color.Gray, style=MaterialTheme.typography.bodySmall)
+    }
+}
+
 @Composable
 fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
     val uid = auth.currentUser?.uid ?: return
@@ -450,7 +517,7 @@ fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
                     }
                 }
             }
-            item { FacebookPageSection() }
+            item { FacebookPageSection() }\n            item { SocialProfileSection() }
             if (error.isNotBlank()) item { Text(error, color=MaterialTheme.colorScheme.error, modifier=Modifier.padding(12.dp)) }
             if (posts.isEmpty()) {
                 item {
