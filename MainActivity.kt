@@ -22,6 +22,9 @@ import org.webrtc.MediaStream
 import org.webrtc.RtpReceiver
 import org.webrtc.DataChannel
 import android.os.Bundle
+import android.os.Build
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.firestore.FieldValue
 import android.media.MediaRecorder
 import android.media.MediaPlayer
 import java.io.File
@@ -80,6 +83,21 @@ fun MessengerApp() {
     var uid by remember { mutableStateOf(auth.currentUser?.uid) }
     var selected by remember { mutableStateOf<Person?>(null) }
     DisposableEffect(Unit) { val l=FirebaseAuth.AuthStateListener { uid=it.currentUser?.uid }; auth.addAuthStateListener(l); onDispose { auth.removeAuthStateListener(l) } }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(uid) {
+        val currentUid = uid
+        if (currentUid != null) {
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(LocalContext.current, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                if (token.isNotBlank()) db.collection("users").document(currentUid).set(
+                    mapOf("fcmTokens" to FieldValue.arrayUnion(token)),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+            }
+        }
+    }
     Surface(Modifier.fillMaxSize(), color=Pale) {
         if(uid==null) AuthScreen { uid=it }
         else {

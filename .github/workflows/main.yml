@@ -56,6 +56,10 @@ jobs:
           p = Path("app/build.gradle.kts")
           s = p.read_text()
 
+          # Add Firebase Messaging for push notifications.
+          if "com.google.firebase:firebase-messaging" not in s:
+              s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("com.google.firebase:firebase-messaging:24.1.0")', s, count=1)
+
           # Add media upload and remote image rendering dependencies.
           if "com.google.firebase:firebase-functions" not in s:
               s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("com.google.firebase:firebase-functions:21.0.0")', s, count=1)
@@ -110,6 +114,7 @@ jobs:
           xml = manifest.read_text()
           for permission in [
               "android.permission.INTERNET",
+              "android.permission.POST_NOTIFICATIONS",
               "android.permission.RECORD_AUDIO",
               "android.permission.MODIFY_AUDIO_SETTINGS",
               "android.permission.CAMERA",
