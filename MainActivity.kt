@@ -696,6 +696,14 @@ fun ChatScreen(person:Person,onBack:()->Unit) {
         Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=8.dp, vertical=10.dp),verticalAlignment=Alignment.CenterVertically){
             TextButton(onClick=onBack){Text("‹",color=Color.White,style=MaterialTheme.typography.headlineMedium)}
             Column(Modifier.weight(1f)){Text(person.name,color=Color.White,fontWeight=FontWeight.Bold);Text("@${person.username}",color=Color(0xFFD8E8FF))}
+            TextButton(onClick={ scope.launch { try {
+                db.collection("reports").add(mapOf("reporterId" to uid, "targetId" to person.uid, "reason" to "ব্যবহারকারী রিপোর্ট", "status" to "open", "createdAt" to System.currentTimeMillis())).await()
+                error = "রিপোর্ট জমা হয়েছে"
+            } catch(e:Exception) { error = e.localizedMessage ?: "রিপোর্ট পাঠানো যায়নি" } } }) { Text("রিপোর্ট", color=Color.White) }
+            TextButton(onClick={ scope.launch { try {
+                db.collection("blocks").document(uid).collection("blocked").document(person.uid).set(mapOf("blockedUid" to person.uid, "createdAt" to System.currentTimeMillis())).await()
+                error = "ব্যবহারকারী ব্লক করা হয়েছে"
+            } catch(e:Exception) { error = e.localizedMessage ?: "ব্লক করা যায়নি" } } }) { Text("ব্লক", color=Color.White) }
             TextButton(onClick={
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                     CallCoordinator.placeVoiceCall(context, person)
