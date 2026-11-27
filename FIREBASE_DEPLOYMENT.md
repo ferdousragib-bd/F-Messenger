@@ -44,3 +44,16 @@ The latest app adds profile bio, avatar/cover image URLs, and public/private pro
 - Test new account registration and existing-account login on a real Android device.
 
 A successful Android APK build does not prove that Firebase services are configured correctly. End-to-end testing against the intended Firebase project is still required.
+
+
+## Free no-VPS mode (current recommended setup)
+
+The Android client can make direct WebRTC connection attempts using Google's public STUN servers without a self-hosted TURN VPS. This keeps the app on the Firebase Spark plan for Auth, Firestore, and Storage within their free quotas. It does **not** guarantee calls on every mobile carrier or NAT: restrictive networks may require a TURN relay.
+
+In this no-VPS mode:
+- Do not configure `TURN_SHARED_SECRET` or `TURN_URLS` and do not run the TURN deployment workflow.
+- Do not expect the `getTurnCredentials` callable or server-triggered Cloud Functions notifications to work unless Functions are separately deployed on an eligible billing plan.
+- Firestore and Storage rules still need to be published to the Firebase project. This can be done manually in Firebase Console by copying the repository's `firestore.rules` into Firestore → Rules and `storage.rules` into Storage → Rules, then publishing. Create the composite indexes from `firestore.indexes.json` when Firestore reports they are required.
+- Enable Email/Password in Firebase Authentication → Sign-in method.
+
+For reliable calls across restrictive networks, add a paid TURN VPS later and deploy the callable credential function. Never put TURN shared secrets in the Android app.
