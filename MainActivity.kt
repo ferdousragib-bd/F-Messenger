@@ -1,6 +1,26 @@
 package com.fmessenger.chat
 
 import android.net.Uri
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import org.webrtc.AudioSource
+import org.webrtc.AudioTrack
+import org.webrtc.MediaConstraints
+import org.webrtc.PeerConnection
+import org.webrtc.PeerConnectionFactory
+import org.webrtc.SdpObserver
+import org.webrtc.SessionDescription
+import org.webrtc.IceCandidate
+import org.webrtc.RTCConfiguration
+import org.webrtc.PeerConnection.IceServer
+import org.webrtc.PeerConnection.Observer
+import org.webrtc.MediaStream
+import org.webrtc.RtpReceiver
+import org.webrtc.DataChannel
 import android.os.Bundle
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
@@ -58,8 +78,14 @@ fun MessengerApp() {
     DisposableEffect(Unit) { val l=FirebaseAuth.AuthStateListener { uid=it.currentUser?.uid }; auth.addAuthStateListener(l); onDispose { auth.removeAuthStateListener(l) } }
     Surface(Modifier.fillMaxSize(), color=Pale) {
         if(uid==null) AuthScreen { uid=it }
-        else if(selected!=null) ChatScreen(selected!!) { selected=null }
-        else MainTabs(onChat={selected=it}, onSignOut={auth.signOut();uid=null})
+        else {
+            CallCoordinator.listenForIncoming(uid!!)
+            Box(Modifier.fillMaxSize()) {
+                if(selected!=null) ChatScreen(selected!!) { selected=null }
+                else MainTabs(onChat={selected=it}, onSignOut={auth.signOut();uid=null})
+                IncomingCallHost()
+            }
+        }
     }
 }
 
@@ -283,11 +309,256 @@ fun ProfileScreen() {
 }
 
 @Composable
+
+/**
+ * WebRTC voice-call coordinator. Firestore is used only for SDP/ICE signaling;
+ * media travels peer-to-peer. Configure a TURN server for reliable mobile/NAT calls.
+ */
+private object CallCoordinator {
+    var activeCallId by mutableStateOf<String?>(null)
+    var callStatus by mutableStateOf("")
+    var remoteName by mutableStateOf("")
+    var incomingCallId by mutableStateOf<String?>(null)
+    var incomingCallerName by mutableStateOf("")
+    private var factory: PeerConnectionFactory? = null
+    private var peer: PeerConnection? = null
+    private var audioSource: AudioSource? = null
+    private var audioTrack: AudioTrack? = null
+    private var callListener: ListenerRegistration? = null
+    private var signalListener: ListenerRegistration? = null
+    private var candidateListener: ListenerRegistration? = null
+    private var localUid: String = ""
+    private var remoteUid: String = ""
+    private var localCandidatePath: String = ""
+
+    private fun initFactory(context: Context) {
+        if (factory != null) return
+        PeerConnectionFactory.initialize(
+            PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
+        )
+        factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+    }
+
+    fun listenForIncoming(uid: String) {
+        if (localUid == uid && callListener != null) return
+        callListener?.remove()
+        localUid = uid
+        callListener = db.collection("calls").whereEqualTo("calleeId", uid)
+            .whereEqualTo("status", "ringing").addSnapshotListener { snap, _ ->
+                val doc = snap?.documents?.firstOrNull()
+                if (doc != null && activeCallId == null) {
+                    incomingCallId = doc.id
+                    incomingCallerName = doc.getString("callerName") ?: "অজানা ব্যবহারকারী"
+                }
+            }
+    }
+
+    fun placeVoiceCall(context: Context, person: Person) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            callStatus = "মাইক্রোফোনের অনুমতি প্রয়োজন"; return
+        }
+        try {
+            initFactory(context)
+            localUid = auth.currentUser?.uid ?: return
+            remoteUid = person.uid
+            remoteName = person.name
+            callStatus = "কল করা হচ্ছে..."
+            val ref = db.collection("calls").document()
+            activeCallId = ref.id
+            localCandidatePath = "callerCandidates"
+            ref.set(mapOf(
+                "callerId" to localUid, "calleeId" to remoteUid,
+                "callerName" to (auth.currentUser?.displayName ?: "ব্যবহারকারী"),
+                "status" to "ringing", "type" to "audio", "createdAt" to System.currentTimeMillis()
+            )).addOnFailureListener { callStatus = "কল শুরু হয়নি: ${it.localizedMessage}" }
+            createPeer(context, ref.id, true)
+            val constraints = MediaConstraints()
+            peer?.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(desc: SessionDescription) {
+                    peer?.setLocalDescription(SimpleSdpObserver(), desc)
+                    ref.update("offer", mapOf("type" to desc.type.canonicalForm(), "sdp" to desc.description))
+                    callStatus = "রিং হচ্ছে..."
+                }
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(error: String) { callStatus = "Offer ব্যর্থ: $error" }
+                override fun onSetFailure(error: String) { callStatus = "SDP ব্যর্থ: $error" }
+            }, constraints)
+            observeCall(ref.id, true)
+        } catch (e: Exception) { callStatus = e.localizedMessage ?: "কল শুরু করা যায়নি" }
+    }
+
+    fun acceptVoiceCall(context: Context, callId: String) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            callStatus = "মাইক্রোফোনের অনুমতি প্রয়োজন"; return
+        }
+        try {
+            initFactory(context)
+            val ref = db.collection("calls").document(callId)
+            ref.get().addOnSuccessListener { doc ->
+                if (!doc.exists()) return@addOnSuccessListener
+                localUid = auth.currentUser?.uid ?: return@addOnSuccessListener
+                remoteUid = doc.getString("callerId") ?: return@addOnSuccessListener
+                remoteName = doc.getString("callerName") ?: "ব্যবহারকারী"
+                activeCallId = callId
+                incomingCallId = null
+                localCandidatePath = "calleeCandidates"
+                createPeer(context, callId, false)
+                val offerMap = doc.get("offer") as? Map<*, *> ?: return@addOnSuccessListener
+                val offer = SessionDescription(SessionDescription.Type.OFFER, offerMap["sdp"] as? String ?: return@addOnSuccessListener)
+                peer?.setRemoteDescription(object : SdpObserver {
+                    override fun onSetSuccess() {
+                        peer?.createAnswer(object : SdpObserver {
+                            override fun onCreateSuccess(desc: SessionDescription) {
+                                peer?.setLocalDescription(SimpleSdpObserver(), desc)
+                                ref.update("answer", mapOf("type" to desc.type.canonicalForm(), "sdp" to desc.description), "status", "connected")
+                                callStatus = "কল সংযুক্ত"
+                            }
+                            override fun onSetSuccess() {}
+                            override fun onCreateFailure(error: String) { callStatus = error }
+                            override fun onSetFailure(error: String) { callStatus = error }
+                        }, MediaConstraints())
+                    }
+                    override fun onCreateSuccess(desc: SessionDescription) {}
+                    override fun onCreateFailure(error: String) { callStatus = error }
+                    override fun onSetFailure(error: String) { callStatus = error }
+                }, offer)
+                observeCall(callId, false)
+            }.addOnFailureListener { callStatus = it.localizedMessage ?: "কল গ্রহণ করা যায়নি" }
+        } catch (e: Exception) { callStatus = e.localizedMessage ?: "কল গ্রহণ করা যায়নি" }
+    }
+
+    private fun createPeer(context: Context, callId: String, caller: Boolean) {
+        val rtcConfig = RTCConfiguration(listOf(IceServer.builder("stun:stun.l.google.com:19302").createIceServer()))
+        peer = factory?.createPeerConnection(rtcConfig, object : Observer {
+            override fun onSignalingChange(state: PeerConnection.SignalingState) {}
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+                when (state) {
+                    PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> callStatus = "কল সংযুক্ত"
+                    PeerConnection.IceConnectionState.DISCONNECTED -> callStatus = "সংযোগ বিচ্ছিন্ন"
+                    PeerConnection.IceConnectionState.FAILED -> callStatus = "নেটওয়ার্ক সংযোগ ব্যর্থ"
+                    else -> {}
+                }
+            }
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
+            override fun onIceCandidate(candidate: IceCandidate) {
+                val path = if (caller) "callerCandidates" else "calleeCandidates"
+                db.collection("calls").document(callId).collection(path).add(mapOf(
+                    "sdpMid" to candidate.sdpMid, "sdpMLineIndex" to candidate.sdpMLineIndex, "candidate" to candidate.sdp
+                ))
+            }
+            override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) {}
+            override fun onAddStream(stream: MediaStream) {}
+            override fun onRemoveStream(stream: MediaStream) {}
+            override fun onDataChannel(channel: DataChannel) {}
+            override fun onRenegotiationNeeded() {}
+            override fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>) {}
+        })
+        audioSource = factory?.createAudioSource(MediaConstraints())
+        audioTrack = factory?.createAudioTrack("f-messenger-audio", audioSource)
+        audioTrack?.setEnabled(true)
+        peer?.addTrack(audioTrack, listOf("f-messenger-stream"))
+        val remotePath = if (caller) "calleeCandidates" else "callerCandidates"
+        candidateListener?.remove()
+        candidateListener = db.collection("calls").document(callId).collection(remotePath).addSnapshotListener { snap, _ ->
+            snap?.documentChanges?.forEach { change ->
+                val d = change.document
+                val mid = d.getString("sdpMid")
+                val index = (d.getLong("sdpMLineIndex") ?: 0L).toInt()
+                val candidate = d.getString("candidate")
+                if (mid != null && candidate != null) peer?.addIceCandidate(IceCandidate(mid, index, candidate))
+            }
+        }
+    }
+
+    private fun observeCall(callId: String, caller: Boolean) {
+        signalListener?.remove()
+        signalListener = db.collection("calls").document(callId).addSnapshotListener { doc, _ ->
+            if (doc == null || !doc.exists()) { endLocal(); return@addSnapshotListener }
+            val status = doc.getString("status") ?: ""
+            if (status == "ended" || status == "rejected" || status == "missed") {
+                callStatus = if (status == "rejected") "কল প্রত্যাখ্যান করা হয়েছে" else "কল শেষ"
+                endLocal(); return@addSnapshotListener
+            }
+            if (caller) {
+                val answer = doc.get("answer") as? Map<*, *>
+                if (answer != null && peer?.remoteDescription == null) {
+                    val sdp = answer["sdp"] as? String
+                    if (sdp != null) peer?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                    callStatus = "কল সংযুক্ত হচ্ছে..."
+                }
+            }
+        }
+    }
+
+    fun rejectIncoming(callId: String) {
+        db.collection("calls").document(callId).update("status", "rejected")
+        incomingCallId = null
+    }
+
+    fun endCall() {
+        val id = activeCallId
+        if (id != null) db.collection("calls").document(id).update("status", "ended")
+        endLocal()
+    }
+
+    private fun endLocal() {
+        signalListener?.remove(); signalListener = null
+        candidateListener?.remove(); candidateListener = null
+        peer?.close(); peer = null
+        audioTrack?.dispose(); audioTrack = null
+        audioSource?.dispose(); audioSource = null
+        activeCallId = null
+        incomingCallId = null
+    }
+
+    private class SimpleSdpObserver : SdpObserver {
+        override fun onCreateSuccess(desc: SessionDescription) {}
+        override fun onSetSuccess() {}
+        override fun onCreateFailure(error: String) {}
+        override fun onSetFailure(error: String) {}
+    }
+}
+
+@Composable
+private fun IncomingCallHost() {
+    val context = LocalContext.current
+    val callId = CallCoordinator.incomingCallId
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val id = CallCoordinator.incomingCallId
+        if (granted && id != null) CallCoordinator.acceptVoiceCall(context, id)
+    }
+    if (callId != null) AlertDialog(
+        onDismissRequest = { CallCoordinator.rejectIncoming(callId) },
+        title = { Text("ইনকামিং ভয়েস কল") },
+        text = { Text("${CallCoordinator.incomingCallerName} আপনাকে কল করছেন।") },
+        confirmButton = { TextButton(onClick = {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                CallCoordinator.acceptVoiceCall(context, callId)
+            else permissions.launch(Manifest.permission.RECORD_AUDIO)
+        }) { Text("রিসিভ") } },
+        dismissButton = { TextButton(onClick = { CallCoordinator.rejectIncoming(callId) }) { Text("বাতিল") } }
+    )
+    if (CallCoordinator.activeCallId != null) AlertDialog(
+        onDismissRequest = { CallCoordinator.endCall() },
+        title = { Text("F Messenger কল") },
+        text = { Column { Text(CallCoordinator.remoteName); Text(CallCoordinator.callStatus) } },
+        confirmButton = { TextButton(onClick = { CallCoordinator.endCall() }) { Text("কল কেটে দিন") } }
+    )
+}
+
 fun ChatScreen(person:Person,onBack:()->Unit) {
-    val uid=auth.currentUser?.uid?:return;val chatId=listOf(uid,person.uid).sorted().joinToString("_");var messages by remember{mutableStateOf(listOf<ChatMessage>())};var draft by remember{mutableStateOf("")};var error by remember{mutableStateOf("")};val scope= rememberCoroutineScope()
+    val uid=auth.currentUser?.uid?:return;val chatId=listOf(uid,person.uid).sorted().joinToString("_");var messages by remember{mutableStateOf(listOf<ChatMessage>())};var draft by remember{mutableStateOf("")};var error by remember{mutableStateOf("")};val scope= rememberCoroutineScope();val context= LocalContext.current
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) CallCoordinator.placeVoiceCall(context, person) else error = "কল করতে মাইক্রোফোনের অনুমতি দিন"
+    }
     DisposableEffect(chatId){val l:ListenerRegistration=db.collection("chats").document(chatId).collection("messages").orderBy("createdAt").addSnapshotListener{snap,e->if(e!=null)error=e.localizedMessage?: "মেসেজ লোড হয়নি" else messages=snap?.documents?.mapNotNull{d->d.toObject(ChatMessage::class.java)?.copy(id=d.id)}?:emptyList()};onDispose{l.remove()}}
     Column(Modifier.fillMaxSize()){
-        Row(Modifier.fillMaxWidth().background(Navy).padding(12.dp),verticalAlignment=Alignment.CenterVertically){TextButton(onClick=onBack){Text("‹",color=Color.White,style=MaterialTheme.typography.headlineMedium)};Column{Text(person.name,color=Color.White,fontWeight=FontWeight.Bold);Text("@${person.username}",color=Color(0xFFD8E8FF))}}
+        Row(Modifier.fillMaxWidth().background(Navy).padding(12.dp),verticalAlignment=Alignment.CenterVertically){TextButton(onClick=onBack){Text("‹",color=Color.White,style=MaterialTheme.typography.headlineMedium)};Column{Text(person.name,color=Color.White,fontWeight=FontWeight.Bold);Text("@${person.username}",color=Color(0xFFD8E8FF))};Spacer(Modifier.weight(1f));TextButton(onClick={
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                CallCoordinator.placeVoiceCall(context, person)
+            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }) { Text("📞", color=Color.White) }}
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)){items(messages){m->Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==uid)Arrangement.End else Arrangement.Start){Surface(color=if(m.senderId==uid)Blue else Color.White,shape=RoundedCornerShape(15.dp)){Text(m.text,Modifier.padding(12.dp),color=if(m.senderId==uid)Color.White else Navy)}};Spacer(Modifier.height(7.dp))}}
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp),verticalAlignment=Alignment.CenterVertically){OutlinedTextField(draft,{draft=it},modifier=Modifier.weight(1f),placeholder={Text("মেসেজ লিখুন...")});TextButton(onClick={val msg=draft.trim();if(msg.isNotBlank())scope.launch{try{val ref=db.collection("chats").document(chatId);ref.set(mapOf("members" to listOf(uid,person.uid),"lastMessage" to msg,"updatedAt" to System.currentTimeMillis())).await();ref.collection("messages").add(mapOf("senderId" to uid,"text" to msg,"createdAt" to System.currentTimeMillis())).await();draft=""}catch(e:Exception){error=e.localizedMessage?: "পাঠানো যায়নি"}}}){Text("পাঠান")}}
