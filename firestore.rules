@@ -32,13 +32,18 @@ service cloud.firestore {
     }
     // Public discovery data must never contain email or private phone numbers.
     match /publicProfiles/{userId} {
-      allow read: if signedIn();
+      allow read: if signedIn() && (resource.data.profileVisibility != 'private'
+        || request.auth.uid == userId || isFollower(userId));
       allow create: if signedIn() && request.auth.uid == userId
         && request.resource.data.uid == userId
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'username', 'usernameLower', 'createdAt']);
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'username', 'usernameLower', 'createdAt', 'bio', 'avatarUrl', 'coverUrl', 'profileVisibility']);
       allow update: if signedIn() && request.auth.uid == userId
         && request.resource.data.uid == userId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'username', 'usernameLower']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'username', 'usernameLower', 'bio', 'avatarUrl', 'coverUrl', 'profileVisibility'])
+        && (!('bio' in request.resource.data) || request.resource.data.bio is string)
+        && (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl is string)
+        && (!('coverUrl' in request.resource.data) || request.resource.data.coverUrl is string)
+        && (!('profileVisibility' in request.resource.data) || request.resource.data.profileVisibility in ['public', 'private']);
       allow delete: if signedIn() && request.auth.uid == userId;
     }
     match /posts/{postId} {
