@@ -341,11 +341,16 @@ private object CallCoordinator {
         localUid = uid
         callListener = db.collection("calls").whereEqualTo("calleeId", uid)
             .whereEqualTo("status", "ringing").addSnapshotListener { snap, _ ->
-                val doc = snap?.documents?.firstOrNull()
-                if (doc != null && activeCallId == null) {
-                    incomingCallId = doc.id
-                    incomingCallerName = doc.getString("callerName") ?: "অজানা ব্যবহারকারী"
-                }
+                // Do not show the incoming-call dialog until the caller's SDP offer
+            // has been committed. This prevents accepting a call before its offer exists.
+            val doc = snap?.documents?.firstOrNull { d ->
+                val offer = d.get("offer") as? Map<*, *>
+                (offer?.get("sdp") as? String)?.isNotBlank() == true
+            }
+            if (doc != null && activeCallId == null) {
+                incomingCallId = doc.id
+                incomingCallerName = doc.getString("callerName") ?: "অজানা ব্যবহারকারী"
+            }
             }
     }
 
@@ -366,20 +371,31 @@ private object CallCoordinator {
                 "callerId" to localUid, "calleeId" to remoteUid,
                 "callerName" to (auth.currentUser?.displayName ?: "ব্যবহারকারী"),
                 "status" to "ringing", "type" to "audio", "createdAt" to System.currentTimeMillis()
-            )).addOnFailureListener { callStatus = "কল শুরু হয়নি: ${it.localizedMessage}" }
-            createPeer(context, ref.id, true)
-            val constraints = MediaConstraints()
-            peer?.createOffer(object : SdpObserver {
-                override fun onCreateSuccess(desc: SessionDescription) {
-                    peer?.setLocalDescription(SimpleSdpObserver(), desc)
-                    ref.update("offer", mapOf("type" to desc.type.canonicalForm(), "sdp" to desc.description))
-                    callStatus = "রিং হচ্ছে..."
-                }
-                override fun onSetSuccess() {}
-                override fun onCreateFailure(error: String) { callStatus = "Offer ব্যর্থ: $error" }
-                override fun onSetFailure(error: String) { callStatus = "SDP ব্যর্থ: $error" }
-            }, constraints)
-            observeCall(ref.id, true)
+            )).addOnSuccessListener {
+                // Create the offer only after the call document exists.
+                createPeer(context, ref.id, true)
+                peer?.createOffer(object : SdpObserver {
+                    override fun onCreateSuccess(desc: SessionDescription) {
+                        peer?.setLocalDescription(object : SdpObserver {
+                            override fun onSetSuccess() {
+                                ref.update("offer", mapOf("type" to desc.type.canonicalForm(), "sdp" to desc.description))
+                                    .addOnSuccessListener { callStatus = "রিং হচ্ছে..." }
+                                    .addOnFailureListener { callStatus = "কলের অফার পাঠানো যায়নি: ${it.localizedMessage}" }
+                            }
+                            override fun onCreateSuccess(value: SessionDescription) {}
+                            override fun onCreateFailure(error: String) { callStatus = "SDP ব্যর্থ: $error" }
+                            override fun onSetFailure(error: String) { callStatus = "SDP ব্যর্থ: $error" }
+                        }, desc)
+                    }
+                    override fun onSetSuccess() {}
+                    override fun onCreateFailure(error: String) { callStatus = "Offer ব্যর্থ: $error"; endLocal() }
+                    override fun onSetFailure(error: String) { callStatus = "SDP ব্যর্থ: $error"; endLocal() }
+                }, MediaConstraints())
+                observeCall(ref.id, true)
+            }.addOnFailureListener {
+                callStatus = "কল শুরু হয়নি: ${it.localizedMessage}"
+                endLocal()
+            }
         } catch (e: Exception) { callStatus = e.localizedMessage ?: "কল শুরু করা যায়নি" }
     }
 
