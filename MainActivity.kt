@@ -255,6 +255,7 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when(tab) {
                 "হোম" -> HomeProfileScreen(onSearch={tab="খুঁজুন"}, onMessage={tab="চ্যাট";})
+                "ফিড" -> FeedScreen()
                 "খুঁজুন" -> DiscoverScreen(onChat)
                 "চ্যাট" -> ChatsScreen(onChat)
                 "রিলস" -> ReelsScreen()
@@ -267,7 +268,7 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
             horizontalArrangement=Arrangement.SpaceEvenly,
             verticalAlignment=Alignment.CenterVertically
         ) {
-            listOf("হোম" to "⌂", "খুঁজুন" to "⌕", "চ্যাট" to "✉", "প্রোফাইল" to "♙").forEach { (item, glyph) ->
+            listOf("হোম" to "⌂", "ফিড" to "▤", "খুঁজুন" to "⌕", "চ্যাট" to "✉", "প্রোফাইল" to "♙").forEach { (item, glyph) ->
                 Column(
                     Modifier.weight(1f).clickable { tab=item }.padding(vertical=5.dp),
                     horizontalAlignment=Alignment.CenterHorizontally
