@@ -140,7 +140,7 @@ fun FeedScreen() {
                         db.collection("posts").add(mapOf("authorId" to uid,"authorName" to (user?.name?:auth.currentUser?.email?: "ব্যবহারকারী"),"authorUsername" to (user?.username?:""),"caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
                         caption="";picked=null
                     }catch(e:Exception){error=e.localizedMessage?: "পোস্ট করা যায়নি"};busy=false
-                }){Text(if(busy)"আপলোড..." else "পোস্ট করুন")}
+                }}){Text(if(busy)"আপলোড..." else "পোস্ট করুন")}
             }
             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         }
