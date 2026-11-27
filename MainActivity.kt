@@ -49,6 +49,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
@@ -392,8 +393,13 @@ private object CallCoordinator {
                 "status" to "ringing", "type" to "audio", "createdAt" to System.currentTimeMillis()
             )).addOnSuccessListener {
                 // Create the offer only after the call document exists.
-                createPeer(context, ref.id, true)
-                peer?.createOffer(object : SdpObserver {
+                createPeer(context, ref.id, true) { readyPeer ->
+                    if (readyPeer == null) {
+                        callStatus = "কলের নেটওয়ার্ক প্রস্তুত করা যায়নি"
+                        endLocal()
+                        return@createPeer
+                    }
+                    readyPeer.createOffer(object : SdpObserver {
                     override fun onCreateSuccess(desc: SessionDescription) {
                         peer?.setLocalDescription(object : SdpObserver {
                             override fun onSetSuccess() {
@@ -409,8 +415,9 @@ private object CallCoordinator {
                     override fun onSetSuccess() {}
                     override fun onCreateFailure(error: String) { callStatus = "Offer ব্যর্থ: $error"; endLocal() }
                     override fun onSetFailure(error: String) { callStatus = "SDP ব্যর্থ: $error"; endLocal() }
-                }, MediaConstraints())
-                observeCall(ref.id, true)
+                    }, MediaConstraints())
+                    observeCall(ref.id, true)
+                }
             }.addOnFailureListener {
                 callStatus = "কল শুরু হয়নি: ${it.localizedMessage}"
                 endLocal()
@@ -433,10 +440,15 @@ private object CallCoordinator {
                 activeCallId = callId
                 incomingCallId = null
                 localCandidatePath = "calleeCandidates"
-                createPeer(context, callId, false)
                 val offerMap = doc.get("offer") as? Map<*, *> ?: return@addOnSuccessListener
                 val offer = SessionDescription(SessionDescription.Type.OFFER, offerMap["sdp"] as? String ?: return@addOnSuccessListener)
-                peer?.setRemoteDescription(object : SdpObserver {
+                createPeer(context, callId, false) { readyPeer ->
+                    if (readyPeer == null) {
+                        callStatus = "কলের নেটওয়ার্ক প্রস্তুত করা যায়নি"
+                        endLocal()
+                        return@createPeer
+                    }
+                    readyPeer.setRemoteDescription(object : SdpObserver {
                     override fun onSetSuccess() {
                         flushRemoteCandidates()
                         peer?.createAnswer(object : SdpObserver {
@@ -453,14 +465,49 @@ private object CallCoordinator {
                     override fun onCreateSuccess(desc: SessionDescription) {}
                     override fun onCreateFailure(error: String) { callStatus = error }
                     override fun onSetFailure(error: String) { callStatus = error }
-                }, offer)
-                observeCall(callId, false)
+                    }, offer)
+                    observeCall(callId, false)
+                }
             }.addOnFailureListener { callStatus = it.localizedMessage ?: "কল গ্রহণ করা যায়নি" }
         } catch (e: Exception) { callStatus = e.localizedMessage ?: "কল গ্রহণ করা যায়নি" }
     }
 
-    private fun createPeer(context: Context, callId: String, caller: Boolean) {
-        val rtcConfig = RTCConfiguration(listOf(IceServer.builder("stun:stun.l.google.com:19302").createIceServer()))
+    private fun createPeer(context: Context, callId: String, caller: Boolean, onReady: (PeerConnection?) -> Unit) {
+        // Credentials are minted by a Firebase callable function; never embed TURN secrets in the APK.
+        FirebaseFunctions.getInstance().getHttpsCallable("getTurnCredentials").call()
+            .addOnSuccessListener { result ->
+                val payload = result.data as? Map<*, *>
+                val urls = (payload?.get("urls") as? List<*>)?.filterIsInstance<String>().orEmpty()
+                val username = payload?.get("username") as? String
+                val credential = payload?.get("credential") as? String
+                val iceServers = mutableListOf(IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+                if (urls.isNotEmpty() && !username.isNullOrBlank() && !credential.isNullOrBlank()) {
+                    iceServers.add(IceServer.builder(urls).setUsername(username).setPassword(credential).createIceServer())
+                }
+                createPeerWithIceServers(context, callId, caller, iceServers, onReady)
+            }
+            .addOnFailureListener {
+                // Keep a STUN-only fallback so calls can still connect where direct P2P is possible.
+                callStatus = "TURN relay পাওয়া যায়নি; সরাসরি সংযোগ চেষ্টা করা হচ্ছে"
+                createPeerWithIceServers(
+                    context, callId, caller,
+                    listOf(IceServer.builder("stun:stun.l.google.com:19302").createIceServer()),
+                    onReady
+                )
+            }
+    }
+
+    private fun createPeerWithIceServers(
+        context: Context,
+        callId: String,
+        caller: Boolean,
+        iceServers: List<IceServer>,
+        onReady: (PeerConnection?) -> Unit
+    ) {
+        val rtcConfig = RTCConfiguration(iceServers).apply {
+            iceTransportsType = PeerConnection.IceTransportsType.ALL
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
+        }
         peer = factory?.createPeerConnection(rtcConfig, object : Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
@@ -502,6 +549,7 @@ private object CallCoordinator {
                 if (mid != null && candidate != null) addOrQueueRemoteCandidate(IceCandidate(mid, index, candidate))
             }
         }
+        onReady(peer)
     }
 
     private fun observeCall(callId: String, caller: Boolean) {
