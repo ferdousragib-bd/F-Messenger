@@ -42,9 +42,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -359,19 +356,24 @@ fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
                 item {
                     Text("আপনার পোস্ট", color=Navy, fontWeight=FontWeight.Bold, style=MaterialTheme.typography.titleMedium, modifier=Modifier.padding(horizontal=14.dp, vertical=8.dp))
                 }
-                gridItems(posts, key={it.id}) { post ->
-                    Column(
-                        Modifier.padding(horizontal=5.dp, vertical=5.dp)
-                            .background(Cream, RoundedCornerShape(12.dp))
-                    ) {
-                        if (post.mediaUrl.isNotBlank() && post.mediaType != "video") {
-                            AsyncImage(model=post.mediaUrl, contentDescription="পোস্টের ছবি", modifier=Modifier.fillMaxWidth().height(190.dp))
-                        } else {
-                            Box(Modifier.fillMaxWidth().height(190.dp).background(Color(0xFFE7E0D2), RoundedCornerShape(topStart=12.dp, topEnd=12.dp)), contentAlignment=Alignment.Center) {
-                                Text(if(post.mediaType=="video") "▶ ভিডিও" else post.caption.take(65).ifBlank{"নতুন পোস্ট"}, color=Navy)
+                items(posts.chunked(2)) { rowPosts ->
+                    Row(Modifier.fillMaxWidth()) {
+                        rowPosts.forEach { post ->
+                            Column(
+                                Modifier.weight(1f).padding(horizontal=5.dp, vertical=5.dp)
+                                    .background(Cream, RoundedCornerShape(12.dp))
+                            ) {
+                                if (post.mediaUrl.isNotBlank() && post.mediaType != "video") {
+                                    AsyncImage(model=post.mediaUrl, contentDescription="পোস্টের ছবি", modifier=Modifier.fillMaxWidth().height(190.dp))
+                                } else {
+                                    Box(Modifier.fillMaxWidth().height(190.dp).background(Color(0xFFE7E0D2), RoundedCornerShape(topStart=12.dp, topEnd=12.dp)), contentAlignment=Alignment.Center) {
+                                        Text(if(post.mediaType=="video") "▶ ভিডিও" else post.caption.take(65).ifBlank{"নতুন পোস্ট"}, color=Navy)
+                                    }
+                                }
+                                Text(post.caption.ifBlank{"নতুন পোস্ট"}, color=Navy, maxLines=2, modifier=Modifier.padding(10.dp))
                             }
                         }
-                        Text(post.caption.ifBlank{"নতুন পোস্ট"}, color=Navy, maxLines=2, modifier=Modifier.padding(10.dp))
+                        if (rowPosts.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             }
