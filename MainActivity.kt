@@ -3,6 +3,10 @@ package com.fmessenger.chat
 // F Messenger Android client — current maintained build.
 
 import android.net.Uri
+import android.app.Activity
+import com.google.firebase.auth.PhoneAuthProvider
+import com.google.firebase.auth.PhoneAuthCredential
+import java.util.concurrent.TimeUnit
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -114,36 +118,119 @@ fun MessengerApp() {
 
 @Composable
 fun AuthScreen(onSignedIn:(String)->Unit) {
-    var register by remember { mutableStateOf(false) }; var name by remember { mutableStateOf("") }; var username by remember { mutableStateOf("") }; var phone by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf("") }
-    val scope= rememberCoroutineScope()
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement=Arrangement.Center) {
-        Box(Modifier.size(72.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text("F",color=Color.White,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)}
-        Spacer(Modifier.height(14.dp)); Text("Pasha অ্যাপ",style=MaterialTheme.typography.headlineMedium,color=Navy,fontWeight=FontWeight.Bold)
-        Text(if(register) "সবার জন্য সামাজিক যোগাযোগ" else "আপনার মানুষের সঙ্গে যুক্ত থাকুন",color=Color.Gray)
-        Spacer(Modifier.height(18.dp))
-        if(register){ OutlinedTextField(name,{name=it},label={Text("আপনার নাম")},modifier=Modifier.fillMaxWidth()); OutlinedTextField(username,{username=it.lowercase().replace(" ","")},label={Text("Username")},modifier=Modifier.fillMaxWidth()); OutlinedTextField(phone,{phone=it},label={Text("ফোন নম্বর")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),modifier=Modifier.fillMaxWidth()) }
-        OutlinedTextField(email,{email=it},label={Text("ইমেইল")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(password,{password=it},label={Text("পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
-        if(error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
-        Spacer(Modifier.height(12.dp))
-        Button(onClick={scope.launch { busy=true;error="";try {
-            require(email.contains("@") && password.length>=6){"সঠিক ইমেইল ও কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন"}
-            if(register){ require(name.isNotBlank()&&username.length>=3&&phone.isNotBlank()){"নাম, ৩ অক্ষরের Username ও ফোন নম্বর দিন"}
-                val u=auth.createUserWithEmailAndPassword(email.trim(),password).await().user!!
-                db.collection("users").document(u.uid).set(mapOf("uid" to u.uid,"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()},"email" to email.trim(),"createdAt" to System.currentTimeMillis())).await(); db.collection("publicProfiles").document(u.uid).set(mapOf("uid" to u.uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"createdAt" to System.currentTimeMillis())).await(); onSignedIn(u.uid)
-            } else {
-                val signed=auth.signInWithEmailAndPassword(email.trim(),password).await().user!!
-                val old=db.collection("users").document(signed.uid).get().await()
-                val publicRef=db.collection("publicProfiles").document(signed.uid)
-                if(!publicRef.get().await().exists() && old.exists()) {
-                    publicRef.set(mapOf("uid" to signed.uid,"name" to (old.getString("name") ?: "ব্যবহারকারী"),"username" to (old.getString("username") ?: ""),"usernameLower" to (old.getString("usernameLower") ?: ""))).await()
+    var phone by remember { mutableStateOf("") }
+    var otp by remember { mutableStateOf("") }
+    var verificationId by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    var info by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val activity = LocalContext.current as? Activity
+
+    fun normalizedPhone(raw: String): String {
+        val digits = raw.filter { it.isDigit() }
+        return when {
+            raw.trim().startsWith("+") && digits.length >= 10 -> "+$digits"
+            digits.startsWith("880") && digits.length == 13 -> "+$digits"
+            digits.startsWith("0") && digits.length == 11 -> "+88$digits"
+            digits.length == 10 && digits.startsWith("1") -> "+880$digits"
+            else -> ""
+        }
+    }
+
+    fun finishPhoneSignIn(credential: PhoneAuthCredential) {
+        scope.launch {
+            busy = true
+            error = ""
+            try {
+                val user = auth.signInWithCredential(credential).await().user
+                    ?: throw IllegalStateException("লগইন সম্পন্ন হয়নি")
+                val e164 = user.phoneNumber ?: normalizedPhone(phone)
+                val digits = e164.filter { it.isDigit() }
+                val profileRef = db.collection("publicProfiles").document(user.uid)
+                val profile = profileRef.get().await()
+                if (!profile.exists()) {
+                    val displayName = "ব্যবহারকারী ${digits.takeLast(4)}"
+                    val username = "user${digits.takeLast(8)}"
+                    profileRef.set(mapOf(
+                        "uid" to user.uid, "name" to displayName,
+                        "username" to username, "usernameLower" to username.lowercase(),
+                        "createdAt" to System.currentTimeMillis()
+                    )).await()
                 }
-                onSignedIn(signed.uid)
+                db.collection("users").document(user.uid).set(mapOf(
+                    "uid" to user.uid, "phone" to e164, "phoneDigits" to digits,
+                    "lastLoginAt" to System.currentTimeMillis()
+                ), com.google.firebase.firestore.SetOptions.merge()).await()
+                onSignedIn(user.uid)
+            } catch (e: Exception) {
+                error = e.localizedMessage ?: "OTP যাচাই করা যায়নি"
+            } finally { busy = false }
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement=Arrangement.Center) {
+        Box(Modifier.size(72.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center) {
+            Text("F",color=Color.White,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)
+        }
+        Spacer(Modifier.height(14.dp))
+        Text("F Messenger",style=MaterialTheme.typography.headlineMedium,color=Navy,fontWeight=FontWeight.Bold)
+        Text("শুধু মোবাইল নম্বর দিয়ে নিরাপদে লগইন করুন",color=Color.Gray)
+        Spacer(Modifier.height(22.dp))
+        OutlinedTextField(
+            value=phone, onValueChange={if(verificationId==null) phone=it},
+            label={Text("মোবাইল নম্বর")}, placeholder={Text("01XXXXXXXXX অথবা +8801XXXXXXXXX")},
+            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),
+            singleLine=true, enabled=verificationId==null && !busy, modifier=Modifier.fillMaxWidth()
+        )
+        if (verificationId != null) {
+            Spacer(Modifier.height(10.dp))
+            Text("আপনার নম্বরে SMS-এ পাঠানো ৬ সংখ্যার কোড লিখুন",color=Navy)
+            OutlinedTextField(
+                value=otp, onValueChange={otp=it.filter(Char::isDigit).take(6)},
+                label={Text("OTP কোড")}, keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),
+                singleLine=true, modifier=Modifier.fillMaxWidth()
+            )
+        }
+        if(error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
+        if(info.isNotBlank()) Text(info,color=Blue)
+        Spacer(Modifier.height(16.dp))
+        Button(
+            enabled=!busy && (if(verificationId==null) normalizedPhone(phone).isNotBlank() else otp.length==6),
+            modifier=Modifier.fillMaxWidth(),
+            onClick={
+                error=""
+                if(verificationId==null) {
+                    val e164=normalizedPhone(phone)
+                    if(e164.isBlank()) error="সঠিক বাংলাদেশি মোবাইল নম্বর লিখুন"
+                    else if(activity==null) error="SMS যাচাই শুরু করা যাচ্ছে না"
+                    else {
+                        busy=true; info="SMS পাঠানো হচ্ছে..."
+                        val callbacks=object: PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                            override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                                finishPhoneSignIn(credential)
+                            }
+                            override fun onVerificationFailed(e: com.google.firebase.FirebaseException) {
+                                busy=false; info=""
+                                error=e.localizedMessage ?: "SMS যাচাই শুরু হয়নি। Firebase Phone sign-in সেটিংস দেখুন"
+                            }
+                            override fun onCodeSent(id:String, token:PhoneAuthProvider.ForceResendingToken) {
+                                verificationId=id; busy=false; info="OTP পাঠানো হয়েছে। SMS থেকে কোড লিখুন।"
+                            }
+                        }
+                        PhoneAuthProvider.getInstance(auth).verifyPhoneNumber(e164,60,TimeUnit.SECONDS,activity,callbacks)
+                    }
+                } else {
+                    val id=verificationId
+                    if(id!=null) finishPhoneSignIn(PhoneAuthProvider.getCredential(id,otp))
+                }
             }
-        }catch(e:Exception){error=e.localizedMessage?: "আবার চেষ্টা করুন"};busy=false }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"অপেক্ষা করুন..." else if(register)"অ্যাকাউন্ট তৈরি করুন" else "লগইন")}
-        if(!register) TextButton(onClick={scope.launch { error=""; if(!email.contains("@")){error="পাসওয়ার্ড রিসেট করতে ইমেইল লিখুন"}else try{auth.sendPasswordResetEmail(email.trim()).await();error="পাসওয়ার্ড রিসেট লিংক ইমেইলে পাঠানো হয়েছে"}catch(e:Exception){error=e.localizedMessage?: "রিসেট ইমেইল পাঠানো যায়নি"} }},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("পাসওয়ার্ড ভুলে গেছেন?")}
-        TextButton(onClick={register=!register;error=""},modifier=Modifier.align(Alignment.CenterHorizontally)){Text(if(register)"আগে অ্যাকাউন্ট আছে? লগইন" else "নতুন অ্যাকাউন্ট খুলুন")}
+        ) { Text(if(busy)"অপেক্ষা করুন..." else if(verificationId==null)"SMS কোড পাঠান" else "যাচাই করে লগইন") }
+        if(verificationId!=null) TextButton(
+            onClick={verificationId=null;otp="";info="";error=""},
+            modifier=Modifier.align(Alignment.CenterHorizontally)
+        ){Text("নম্বর পরিবর্তন করুন")}
+        Text("নতুন ব্যবহারকারী হলে OTP যাচাইয়ের পর স্বয়ংক্রিয়ভাবে অ্যাকাউন্ট তৈরি হবে।",color=Color.Gray,style=MaterialTheme.typography.bodySmall)
     }
 }
 
