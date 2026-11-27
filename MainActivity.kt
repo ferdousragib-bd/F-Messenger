@@ -85,6 +85,7 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
                 db.collection("users").document(u.uid).set(mapOf("uid" to u.uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()},"email" to email.trim(),"createdAt" to System.currentTimeMillis())).await(); onSignedIn(u.uid)
             } else onSignedIn(auth.signInWithEmailAndPassword(email.trim(),password).await().user!!.uid)
         }catch(e:Exception){error=e.localizedMessage?: "আবার চেষ্টা করুন"};busy=false }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"অপেক্ষা করুন..." else if(register)"অ্যাকাউন্ট তৈরি করুন" else "লগইন")}
+        if(!register) TextButton(onClick={scope.launch { error=""; if(!email.contains("@")){error="পাসওয়ার্ড রিসেট করতে ইমেইল লিখুন"}else try{auth.sendPasswordResetEmail(email.trim()).await();error="পাসওয়ার্ড রিসেট লিংক ইমেইলে পাঠানো হয়েছে"}catch(e:Exception){error=e.localizedMessage?: "রিসেট ইমেইল পাঠানো যায়নি"} }},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("পাসওয়ার্ড ভুলে গেছেন?")}
         TextButton(onClick={register=!register;error=""},modifier=Modifier.align(Alignment.CenterHorizontally)){Text(if(register)"আগে অ্যাকাউন্ট আছে? লগইন" else "নতুন অ্যাকাউন্ট খুলুন")}
     }
 }
@@ -222,13 +223,48 @@ fun ChatsScreen(onChat:(Person)->Unit) {
 
 @Composable
 fun ProfileScreen() {
-    val uid=auth.currentUser?.uid?:return;var person by remember{mutableStateOf(Person())};var count by remember{mutableIntStateOf(0)}
-    LaunchedEffect(uid){try{person=db.collection("users").document(uid).get().await().toObject(Person::class.java)?:Person();count=db.collection("posts").whereEqualTo("authorId",uid).get().await().size()}catch(_:Exception){}}
-    Column(Modifier.fillMaxSize().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally){
-        Box(Modifier.size(84.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text(person.name.take(1).uppercase(),color=Color.White,style=MaterialTheme.typography.headlineLarge)}
-        Spacer(Modifier.height(12.dp));Text(person.name,style=MaterialTheme.typography.headlineSmall,color=Navy,fontWeight=FontWeight.Bold);Text("@${person.username}",color=Color.Gray)
-        Spacer(Modifier.height(20.dp));Text("পোস্ট: $count",fontWeight=FontWeight.Bold)
-        Text("F Messenger-এ আপনার প্রোফাইল",color=Color.Gray)
+    val uid=auth.currentUser?.uid?:return
+    var name by remember{mutableStateOf("")}
+    var username by remember{mutableStateOf("")}
+    var phone by remember{mutableStateOf("")}
+    var count by remember{mutableIntStateOf(0)}
+    var busy by remember{mutableStateOf(false)}
+    var status by remember{mutableStateOf("")}
+    val scope= rememberCoroutineScope()
+    LaunchedEffect(uid){try{
+        val doc=db.collection("users").document(uid).get().await()
+        name=doc.getString("name")?: ""
+        username=doc.getString("username")?: ""
+        phone=doc.getString("phone")?: ""
+        count=db.collection("posts").whereEqualTo("authorId",uid).get().await().size()
+    }catch(e:Exception){status=e.localizedMessage?: "প্রোফাইল লোড হয়নি"}}
+    Column(Modifier.fillMaxSize().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+        Box(Modifier.size(84.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text(name.take(1).uppercase().ifBlank{"F"},color=Color.White,style=MaterialTheme.typography.headlineLarge)}
+        Spacer(Modifier.height(12.dp))
+        Text(name.ifBlank{"আপনার নাম"},style=MaterialTheme.typography.headlineSmall,color=Navy,fontWeight=FontWeight.Bold)
+        Text("@$username",color=Color.Gray)
+        Spacer(Modifier.height(12.dp))
+        Text("পোস্ট: $count",fontWeight=FontWeight.Bold)
+        HorizontalDivider(Modifier.padding(vertical=14.dp))
+        Text("প্রোফাইল সম্পাদনা",style=MaterialTheme.typography.titleMedium,color=Navy,fontWeight=FontWeight.Bold)
+        OutlinedTextField(name,{name=it},label={Text("নাম")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        OutlinedTextField(username,{username=it.lowercase().replace(" ","")},label={Text("Username")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        OutlinedTextField(phone,{phone=it},label={Text("ফোন নম্বর")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        if(status.isNotBlank()) Text(status,color=if(status.startsWith("সংরক্ষিত"))Blue else MaterialTheme.colorScheme.error)
+        Spacer(Modifier.height(10.dp))
+        Button(onClick={scope.launch{
+            busy=true;status=""
+            try{
+                require(name.trim().isNotEmpty()){"নাম লিখুন"}
+                require(username.trim().length>=3){"Username কমপক্ষে ৩ অক্ষরের হতে হবে"}
+                require(phone.trim().isNotEmpty()){"ফোন নম্বর লিখুন"}
+                db.collection("users").document(uid).update(
+                    mapOf("name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()})
+                ).await()
+                status="সংরক্ষিত হয়েছে"
+            }catch(e:Exception){status=e.localizedMessage?: "সংরক্ষণ করা যায়নি"}
+            busy=false
+        }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"সংরক্ষণ হচ্ছে..." else "প্রোফাইল সংরক্ষণ করুন")}
     }
 }
 
