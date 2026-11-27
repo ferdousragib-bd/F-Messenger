@@ -1,45 +1,54 @@
 # F Messenger — Android প্রজেক্ট
 
-প্যাকেজ: `com.fmessenger.chat`  
-Firebase project: `f-messenger-9f14a`
+**Package:** `com.fmessenger.chat`  
+**Firebase project ID (repository documentation):** `f-messenger-9f14a`
 
-## বর্তমান Android অ্যাপে যা কাজ করে
-- Email/password দিয়ে নিবন্ধন ও লগইন
-- নাম, Username এবং ফোন নম্বর দিয়ে ব্যবহারকারী খোঁজা
-- Firestore-এ ব্যক্তিগত 1-to-1 টেক্সট চ্যাট
-- রিয়েল-টাইম মেসেজ আপডেট
-- বাংলা UI, নীল-সাদা থিম
+## বর্তমান Android সোর্সে অন্তর্ভুক্ত
+- Email/password নিবন্ধন, লগইন ও password reset
+- নাম, username ও ফোন নম্বর দিয়ে ব্যবহারকারী খোঁজা
+- Public text/image/video post এবং Firebase Storage upload
+- Public feed, video reels/player
+- Like ও comment
+- Follow/unfollow
+- 1-to-1 text chat এবং real-time message updates
+- Profile-এর name/username/phone edit
 
-## সোশ্যাল প্ল্যাটফর্মের Firebase ভিত্তি
-এই রিপোজিটরিতে সোশ্যাল ফিচারের জন্য Firestore ও Storage security rules-এর প্রাথমিক কাঠামো যোগ করা হয়েছে:
-- `posts/{postId}`: public/followers/private visibility, text/image/video media type
-- `posts/{postId}/likes/{userId}` এবং `comments/{commentId}`
-- `follows/{targetUid}/followers/{followerUid}` ও `users/{uid}/following/{targetUid}`
-- `notifications/{notificationId}`, `reports/{reportId}`, `blocks/{uid}/blocked/{blockedUid}`
-- Storage: `post-media`, `profile-media`, `chat-media`
+এগুলো সোর্স কোডে উপস্থিত। Firebase প্রকল্পে সঠিক কনফিগারেশন, Security Rules প্রকাশ এবং বাস্তব ডিভাইসে end-to-end পরীক্ষা না হওয়া পর্যন্ত এগুলোকে production-ready বা সম্পূর্ণ কার্যকর বলা যাবে না।
 
-**গুরুত্বপূর্ণ:** Rules যোগ করা মানে Android UI বা ফিচারগুলো ইতিমধ্যে সম্পূর্ণ তৈরি হয়েছে—এমন নয়। বর্তমান APK-তে এখনো মূলত login, user search ও text chat আছে। Feed UI, media picker/upload, reels/player, likes/comments UI, follow UI, push notification, audio/video calling এবং admin dashboard-এর Android implementation ও পরীক্ষা বাকি।
+## Firebase deployment files
+- `firebase.json`
+- `firestore.rules`
+- `firestore.indexes.json`
+- `storage.rules`
+- `.github/workflows/deploy-firebase.yml`
 
-## Firebase সেটআপ
-1. Firebase Console-এ Authentication থেকে Email/Password enable করুন।
-2. Firestore Database তৈরি করুন।
-3. এই রিপোজিটরির `firestore.rules` Firebase Console → Firestore Database → Rules-এ publish করুন।
-4. Firebase Storage enable করে `storage.rules` Storage → Rules-এ publish করুন।
-5. Rules publish করার আগে Firebase Emulator Suite-এ authenticated/unauthenticated access পরীক্ষা করুন।
-6. Admin moderation চালু করতে trusted server থেকে Firebase custom claim `admin: true` দিতে হবে। কখনো ক্লায়েন্ট অ্যাপ থেকে admin claim দেবেন না।
+### Firebase deployment-এর বাধা
+GitHub Actions workflow-টি চালাতে repository secrets প্রয়োজন:
+- `FIREBASE_PROJECT_ID`: Firebase Console → Project settings → General থেকে সঠিক Project ID
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: ঐ Firebase project-এর service account JSON key
+
+এই secrets ছাড়া GitHub Actions থেকে Firebase Rules/Indexes/Storage Rules প্রকাশ করা সম্ভব নয়। Service-account key কখনো public repository বা chat-এ দেওয়া যাবে না। এই workflow কেবল rules/indexes deploy করে; Firebase Auth provider enable, Firestore/Storage resource তৈরি, Android app registration বা app runtime test করে না।
+
+## জরুরি নিরাপত্তা সতর্কতা — public launch-এর আগে ঠিক করতে হবে
+বর্তমান `firestore.rules`-এ `/users/{userId}`-এর read rule যেকোনো authenticated user-কে সম্পূর্ণ user document পড়তে দেয়। Android registration code-এ ঐ document-এ ফোন নম্বর ও email রাখা হয়। ফলে ব্যবহারকারীর ব্যক্তিগত contact data অন্য logged-in ব্যবহারকারী পড়তে পারে।
+
+সঠিক সমাধান হলো public profile data (নাম, username, profile photo ইত্যাদি) আলাদা `publicProfiles/{uid}` collection-এ রাখা এবং private contact data `users/{uid}`-এ রাখা; তারপর Android discover/profile/chat code-কে publicProfiles-এ migrate করে users collection-এর read permission কেবল owner/admin-এ সীমাবদ্ধ করা। এই migration সম্পন্ন না হওয়া পর্যন্ত production launch করা উচিত নয়। শুধু rules-এ read বন্ধ করলে বর্তমান Discover ও user lookup ভেঙে যাবে।
+
+অন্যান্য release blocker:
+- Username uniqueness server-side transaction/Cloud Function দিয়ে enforce করা
+- Block/report enforcement ও admin moderation UI/backend
+- Push notifications
+- Voice messages এবং audio/video calling (signaling + STUN/TURN infrastructure)
+- Account deletion, privacy policy, abuse reporting এবং rate limits
+- Storage upload/download access, MIME type ও size checks বাস্তব Firebase Emulator/production project-এ পরীক্ষা
+- Firestore Rules/Storage Rules unit tests এবং দুইটি পৃথক test account দিয়ে end-to-end পরীক্ষা
 
 ## Android build
-1. Project ZIP extract করে Android Studio-তে `FMessenger` ফোল্ডার open করুন।
-2. Gradle sync সম্পন্ন করুন।
-3. Firebase project-এর সঠিক `google-services.json` app module-এ রাখুন।
-4. Build → Build APK(s) চালান।
+GitHub Actions-এর **Build F Messenger APK** workflow debug APK build করে artifact হিসেবে আপলোড করে। Build success কেবল compilation সফল হওয়া বোঝায়; Firebase backend runtime-এ কাজ করছে তার প্রমাণ নয়।
 
-## নিরাপত্তা ও প্রকাশের আগে করণীয়
-- বর্তমান user document-এ ফোন/ইমেইল ফিল্ড আছে; production-এ public profile ও private contact data আলাদা collection-এ রাখতে হবে।
-- Username uniqueness server-side transaction/Cloud Function দিয়ে enforce করতে হবে।
-- Public launch-এর আগে block/report enforcement, moderation queue, rate limits, spam controls, privacy policy, account deletion এবং abuse-response process বাস্তবায়ন করতে হবে।
-- Storage media type ও size validation ছাড়াও server-side content moderation এবং upload cleanup প্রয়োজন।
-- Voice/video calling-এর জন্য signaling backend ও STUN/TURN infrastructure প্রয়োজন; শুধু Firestore rules যথেষ্ট নয়।
-- External news/video feed কেবল অনুমোদিত public RSS/API/embed ব্যবহার করে দেখাতে হবে; অন্য সাইটের কনটেন্ট অনুমতি ছাড়া কপি/রিপাবলিশ করা যাবে না।
+APK workflow: https://github.com/ferdousragib-bd/F-Messenger/actions
 
-`google-services.json`-এর API key Firebase client configuration; এটিকে server password ভাববেন না। কোনো service-account private key কখনো Android app বা public repository-তে রাখবেন না।
+## নিরাপত্তা
+- `google-services.json` client configuration; এটি service-account private key নয়।
+- Service-account JSON কখনো Android app, GitHub repository file, issue, screenshot বা chat-এ প্রকাশ করবেন না।
+- Admin custom claims কেবল trusted server environment থেকে দিতে হবে; client app থেকে নয়।
