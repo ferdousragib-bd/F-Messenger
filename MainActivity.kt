@@ -42,6 +42,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -66,9 +69,11 @@ import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-private val Navy = Color(0xFF123B70)
-private val Blue = Color(0xFF247BDB)
-private val Pale = Color(0xFFF1F6FC)
+private val Navy = Color(0xFF24352F)
+private val Blue = Color(0xFF438B78)
+private val Pale = Color(0xFFF7F1E2)
+private val Cream = Color(0xFFFFFDF7)
+private val Green = Color(0xFF438B78)
 private val db by lazy { FirebaseFirestore.getInstance() }
 private val auth by lazy { FirebaseAuth.getInstance() }
 private val storage by lazy { FirebaseStorage.getInstance() }
@@ -219,27 +224,156 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
 
 @Composable
 fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
-    var tab by remember { mutableStateOf("ফিড") }
+    var tab by remember { mutableStateOf("হোম") }
     var isAdmin by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { try { isAdmin = auth.currentUser?.getIdToken(true)?.await()?.claims?.get("admin") == true } catch (_: Exception) { isAdmin = false } }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=16.dp,vertical=13.dp),verticalAlignment=Alignment.CenterVertically){
-            Column(Modifier.weight(1f)){Text("Pasha অ্যাপ",color=Color.White,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text("Connect • Share • Discover",color=Color(0xFFD8E8FF),style=MaterialTheme.typography.labelSmall)}
-            TextButton(onClick=onSignOut){Text("লগআউট",color=Color.White)}
+    Column(Modifier.fillMaxSize().background(Pale)) {
+        Row(
+            Modifier.fillMaxWidth().background(Cream).padding(horizontal=20.dp, vertical=12.dp),
+            verticalAlignment=Alignment.CenterVertically
+        ) {
+            Text("F", color=Green, style=MaterialTheme.typography.headlineMedium, fontWeight=FontWeight.ExtraBold)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick={tab="খুঁজুন"}) { Text("⌕", color=Navy, style=MaterialTheme.typography.headlineMedium) }
+            TextButton(onClick=onSignOut) { Text("⋮", color=Navy, style=MaterialTheme.typography.headlineMedium) }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when(tab){
-                "ফিড"-> FeedScreen()
-                "খুঁজুন"-> DiscoverScreen(onChat)
-                "রিলস"-> ReelsScreen()
-                "চ্যাট"-> ChatsScreen(onChat)
-                "অ্যাডমিন"-> if (isAdmin) AdminReportsScreen() else ProfileScreen()
-                else-> ProfileScreen()
+            when(tab) {
+                "হোম" -> HomeProfileScreen(onSearch={tab="খুঁজুন"}, onMessage={tab="চ্যাট";})
+                "খুঁজুন" -> DiscoverScreen(onChat)
+                "চ্যাট" -> ChatsScreen(onChat)
+                "রিলস" -> ReelsScreen()
+                "অ্যাডমিন" -> if (isAdmin) AdminReportsScreen() else ProfileScreen()
+                else -> ProfileScreen()
             }
         }
-        Row(Modifier.fillMaxWidth().background(Color.White),horizontalArrangement=Arrangement.SpaceEvenly){
-            (listOf("ফিড","খুঁজুন","রিলস","চ্যাট","প্রোফাইল") + if (isAdmin) listOf("অ্যাডমিন") else emptyList()).forEach { item ->
-                TextButton(onClick={tab=item}){Text(item,color=if(tab==item)Blue else Color.Gray,fontWeight=if(tab==item)FontWeight.Bold else FontWeight.Normal)}
+        Row(
+            Modifier.fillMaxWidth().background(Cream).padding(vertical=5.dp),
+            horizontalArrangement=Arrangement.SpaceEvenly,
+            verticalAlignment=Alignment.CenterVertically
+        ) {
+            listOf("হোম" to "⌂", "খুঁজুন" to "⌕", "চ্যাট" to "✉", "প্রোফাইল" to "♙").forEach { (item, glyph) ->
+                Column(
+                    Modifier.weight(1f).clickable { tab=item }.padding(vertical=5.dp),
+                    horizontalAlignment=Alignment.CenterHorizontally
+                ) {
+                    Text(glyph, color=if(tab==item) Green else Color.DarkGray, style=MaterialTheme.typography.headlineSmall)
+                    Text(item, color=if(tab==item) Green else Color.Gray, style=MaterialTheme.typography.labelSmall, fontWeight=if(tab==item) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
+    val uid = auth.currentUser?.uid ?: return
+    var name by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var bio by remember { mutableStateOf("আপনার পরিচয় ও আগ্রহ শেয়ার করুন") }
+    var posts by remember { mutableStateOf(listOf<FeedPost>()) }
+    var followers by remember { mutableIntStateOf(0) }
+    var connections by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf("") }
+
+    DisposableEffect(uid) {
+        val profileListener = db.collection("publicProfiles").document(uid).addSnapshotListener { doc, e ->
+            if (e != null) error = e.localizedMessage ?: "প্রোফাইল লোড হয়নি"
+            else if (doc != null) {
+                name = doc.getString("name") ?: ""
+                username = doc.getString("username") ?: ""
+                bio = doc.getString("bio") ?: "আপনার পরিচয় ও আগ্রহ শেয়ার করুন"
+            }
+        }
+        val postListener = db.collection("posts").whereEqualTo("authorId", uid)
+            .orderBy("createdAt", Query.Direction.DESCENDING).limit(30)
+            .addSnapshotListener { snap, e ->
+                if (e != null) error = e.localizedMessage ?: "পোস্ট লোড হয়নি"
+                else posts = snap?.documents?.mapNotNull { d -> d.toObject(FeedPost::class.java)?.copy(id=d.id) } ?: emptyList()
+            }
+        db.collection("follows").document(uid).collection("followers").get()
+            .addOnSuccessListener { followers = it.size() }
+        db.collection("users").document(uid).collection("following").get()
+            .addOnSuccessListener { connections = it.size() }
+        onDispose { profileListener.remove(); postListener.remove() }
+    }
+
+    Column(Modifier.fillMaxSize().background(Pale)) {
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier=Modifier.fillMaxSize(),
+            contentPadding=PaddingValues(bottom=18.dp)
+        ) {
+            item {
+                Column(
+                    Modifier.fillMaxWidth().background(Pale).padding(horizontal=16.dp, vertical=18.dp),
+                    horizontalAlignment=Alignment.CenterHorizontally
+                ) {
+                    Box(Modifier.size(112.dp).background(Color(0xFFE6DCC8), RoundedCornerShape(18.dp)), contentAlignment=Alignment.Center) {
+                        Text(name.take(1).uppercase().ifBlank{"F"}, color=Green, style=MaterialTheme.typography.displayMedium, fontWeight=FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text(name.ifBlank{"আপনার নাম"}, style=MaterialTheme.typography.headlineSmall, color=Navy, fontWeight=FontWeight.Bold)
+                        Spacer(Modifier.width(5.dp))
+                        Text("✓", color=Color(0xFF269AC7), fontWeight=FontWeight.Bold)
+                    }
+                    Text("@$username", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(5.dp))
+                    Text(bio, color=Navy, style=MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(18.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceEvenly) {
+                        Column(horizontalAlignment=Alignment.CenterHorizontally) {
+                            Text("$connections", style=MaterialTheme.typography.titleLarge, color=Navy, fontWeight=FontWeight.Bold)
+                            Text("Connections", color=Color.Gray, style=MaterialTheme.typography.labelMedium)
+                        }
+                        Column(horizontalAlignment=Alignment.CenterHorizontally) {
+                            Text("$followers", style=MaterialTheme.typography.titleLarge, color=Navy, fontWeight=FontWeight.Bold)
+                            Text("Followers", color=Color.Gray, style=MaterialTheme.typography.labelMedium)
+                        }
+                        TextButton(onClick=onMessage) { Text("Message", color=Navy, fontWeight=FontWeight.SemiBold) }
+                        Button(onClick=onSearch, colors=ButtonDefaults.buttonColors(containerColor=Green), shape=RoundedCornerShape(28.dp)) { Text("Connect", color=Color.White) }
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal=8.dp, vertical=10.dp), horizontalArrangement=Arrangement.SpaceEvenly) {
+                    listOf("▤" to "Projects", "♧" to "Journeys", "▧" to "Thoughts", "↗" to "Growth").forEach { (glyph, label) ->
+                        Column(Modifier.weight(1f).clickable { onSearch() }, horizontalAlignment=Alignment.CenterHorizontally) {
+                            Box(Modifier.size(66.dp).background(Cream, CircleShape), contentAlignment=Alignment.Center) {
+                                Box(Modifier.fillMaxSize().padding(3.dp).background(Color.Transparent, CircleShape)) {
+                                    Text(glyph, modifier=Modifier.align(Alignment.Center), color=Green, style=MaterialTheme.typography.headlineMedium)
+                                }
+                            }
+                            Spacer(Modifier.height(5.dp))
+                            Text(label, color=Navy, style=MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+            if (error.isNotBlank()) item { Text(error, color=MaterialTheme.colorScheme.error, modifier=Modifier.padding(12.dp)) }
+            if (posts.isEmpty()) {
+                item {
+                    Text("আপনার পোস্টগুলো এখানে দেখা যাবে। প্রথম পোস্টটি শেয়ার করুন!", color=Color.Gray, modifier=Modifier.padding(18.dp))
+                }
+            } else {
+                item {
+                    Text("আপনার পোস্ট", color=Navy, fontWeight=FontWeight.Bold, style=MaterialTheme.typography.titleMedium, modifier=Modifier.padding(horizontal=14.dp, vertical=8.dp))
+                }
+                gridItems(posts, key={it.id}) { post ->
+                    Column(
+                        Modifier.padding(horizontal=5.dp, vertical=5.dp)
+                            .background(Cream, RoundedCornerShape(12.dp))
+                    ) {
+                        if (post.mediaUrl.isNotBlank() && post.mediaType != "video") {
+                            AsyncImage(model=post.mediaUrl, contentDescription="পোস্টের ছবি", modifier=Modifier.fillMaxWidth().height(190.dp))
+                        } else {
+                            Box(Modifier.fillMaxWidth().height(190.dp).background(Color(0xFFE7E0D2), RoundedCornerShape(topStart=12.dp, topEnd=12.dp)), contentAlignment=Alignment.Center) {
+                                Text(if(post.mediaType=="video") "▶ ভিডিও" else post.caption.take(65).ifBlank{"নতুন পোস্ট"}, color=Navy)
+                            }
+                        }
+                        Text(post.caption.ifBlank{"নতুন পোস্ট"}, color=Navy, maxLines=2, modifier=Modifier.padding(10.dp))
+                    }
+                }
             }
         }
     }
