@@ -473,28 +473,23 @@ private object CallCoordinator {
     }
 
     private fun createPeer(context: Context, callId: String, caller: Boolean, onReady: (PeerConnection?) -> Unit) {
-        // Credentials are minted by a Firebase callable function; never embed TURN secrets in the APK.
-        FirebaseFunctions.getInstance().getHttpsCallable("getTurnCredentials").call()
-            .addOnSuccessListener { result ->
-                val payload = result.data as? Map<*, *>
-                val urls = (payload?.get("urls") as? List<*>)?.filterIsInstance<String>().orEmpty()
-                val username = payload?.get("username") as? String
-                val credential = payload?.get("credential") as? String
-                val iceServers = mutableListOf(IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
-                if (urls.isNotEmpty() && !username.isNullOrBlank() && !credential.isNullOrBlank()) {
-                    iceServers.add(IceServer.builder(urls).setUsername(username).setPassword(credential).createIceServer())
-                }
-                createPeerWithIceServers(context, callId, caller, iceServers, onReady)
-            }
-            .addOnFailureListener {
-                // Keep a STUN-only fallback so calls can still connect where direct P2P is possible.
-                callStatus = "TURN relay পাওয়া যায়নি; সরাসরি সংযোগ চেষ্টা করা হচ্ছে"
-                createPeerWithIceServers(
-                    context, callId, caller,
-                    listOf(IceServer.builder("stun:stun.l.google.com:19302").createIceServer()),
-                    onReady
-                )
-            }
+        // Metered TURN credentials. These are embedded as explicitly requested.
+        // WARNING: APKs and public source repositories can expose these credentials.
+        val meteredUsername = "8a999f7f2a241910a335f635"
+        val meteredCredential = "SxG/L3xCwVwCOgO9"
+        val iceServers = listOf(
+            IceServer.builder("stun:stun.relay.metered.ca:80").createIceServer(),
+            IceServer.builder("turn:global.relay.metered.ca:80")
+                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer(),
+            IceServer.builder("turn:global.relay.metered.ca:80?transport=tcp")
+                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer(),
+            IceServer.builder("turn:global.relay.metered.ca:443")
+                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer(),
+            IceServer.builder("turns:global.relay.metered.ca:443?transport=tcp")
+                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer()
+        )
+        callStatus = "Metered TURN দিয়ে সংযোগের চেষ্টা করা হচ্ছে"
+        createPeerWithIceServers(context, callId, caller, iceServers, onReady)
     }
 
     private fun createPeerWithIceServers(
