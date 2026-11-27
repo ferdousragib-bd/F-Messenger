@@ -14,6 +14,13 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
+import org.webrtc.Camera2Enumerator
+import org.webrtc.CameraVideoCapturer
+import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoSource
+import org.webrtc.VideoTrack
+import org.webrtc.EglBase
+import org.webrtc.SurfaceViewRenderer
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
@@ -978,6 +985,14 @@ private object CallCoordinator {
     private var peer: PeerConnection? = null
     private var audioSource: AudioSource? = null
     private var audioTrack: AudioTrack? = null
+    private var videoSource: VideoSource? = null
+    private var videoTrack: VideoTrack? = null
+    private var cameraCapturer: CameraVideoCapturer? = null
+    private var surfaceTextureHelper: SurfaceTextureHelper? = null
+    private val eglBase: EglBase by lazy { EglBase.create() }
+    var remoteVideoTrack by mutableStateOf<VideoTrack?>(null)
+    var activeCallIsVideo by mutableStateOf(false)
+    var incomingCallIsVideo by mutableStateOf(false)
     private var callListener: ListenerRegistration? = null
     private var signalListener: ListenerRegistration? = null
     private var candidateListener: ListenerRegistration? = null
@@ -1025,11 +1040,19 @@ private object CallCoordinator {
             if (doc != null && activeCallId == null) {
                 incomingCallId = doc.id
                 incomingCallerName = doc.getString("callerName") ?: "অজানা ব্যবহারকারী"
+                incomingCallIsVideo = doc.getString("type") == "video"
             }
             }
     }
 
-    fun placeVoiceCall(context: Context, person: Person) {
+    fun placeVoiceCall(context: Context, person: Person) = placeCall(context, person, false)
+
+    fun placeVideoCall(context: Context, person: Person) = placeCall(context, person, true)
+
+    private fun placeCall(context: Context, person: Person, video: Boolean) {
+        if (video && ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            callStatus = "ভিডিও কলের জন্য ক্যামেরার অনুমতি প্রয়োজন"; return
+        }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             callStatus = "মাইক্রোফোনের অনুমতি প্রয়োজন"; return
         }
@@ -1041,14 +1064,15 @@ private object CallCoordinator {
             callStatus = "কল করা হচ্ছে..."
             val ref = db.collection("calls").document()
             activeCallId = ref.id
+            activeCallIsVideo = video
             localCandidatePath = "callerCandidates"
             ref.set(mapOf(
                 "callerId" to localUid, "calleeId" to remoteUid,
                 "callerName" to (auth.currentUser?.displayName ?: "ব্যবহারকারী"),
-                "status" to "ringing", "type" to "audio", "createdAt" to System.currentTimeMillis()
+                "status" to "ringing", "type" to if (video) "video" else "audio", "createdAt" to System.currentTimeMillis()
             )).addOnSuccessListener {
                 // Create the offer only after the call document exists.
-                createPeer(context, ref.id, true) { readyPeer ->
+                createPeer(context, ref.id, true, video) { readyPeer ->
                     if (readyPeer == null) {
                         callStatus = "কলের নেটওয়ার্ক প্রস্তুত করা যায়নি"
                         endLocal()
@@ -1093,11 +1117,12 @@ private object CallCoordinator {
                 remoteUid = doc.getString("callerId") ?: return@addOnSuccessListener
                 remoteName = doc.getString("callerName") ?: "ব্যবহারকারী"
                 activeCallId = callId
+                activeCallIsVideo = doc.getString("type") == "video"
                 incomingCallId = null
                 localCandidatePath = "calleeCandidates"
                 val offerMap = doc.get("offer") as? Map<*, *> ?: return@addOnSuccessListener
                 val offer = SessionDescription(SessionDescription.Type.OFFER, offerMap["sdp"] as? String ?: return@addOnSuccessListener)
-                createPeer(context, callId, false) { readyPeer ->
+                createPeer(context, callId, false, activeCallIsVideo) { readyPeer ->
                     if (readyPeer == null) {
                         callStatus = "কলের নেটওয়ার্ক প্রস্তুত করা যায়নি"
                         endLocal()
@@ -1127,7 +1152,7 @@ private object CallCoordinator {
         } catch (e: Exception) { callStatus = e.localizedMessage ?: "কল গ্রহণ করা যায়নি" }
     }
 
-    private fun createPeer(context: Context, callId: String, caller: Boolean, onReady: (PeerConnection?) -> Unit) {
+    private fun createPeer(context: Context, callId: String, caller: Boolean, video: Boolean, onReady: (PeerConnection?) -> Unit) {
         // Free STUN + Metered Open Relay TURN fallback (20 GB/month free quota).
         // Shared demo credentials are best-effort, not a production SLA or private credentials.
         val iceServers = listOf(
@@ -1138,13 +1163,14 @@ private object CallCoordinator {
             IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp").setUsername("openrelayproject").setPassword("openrelayproject").createIceServer()
         )
         callStatus = "STUN/TURN নেটওয়ার্ক সংযোগের চেষ্টা চলছে..."
-        createPeerWithIceServers(context, callId, caller, iceServers, onReady)
+        createPeerWithIceServers(context, callId, caller, video, iceServers, onReady)
     }
 
     private fun createPeerWithIceServers(
         context: Context,
         callId: String,
         caller: Boolean,
+        video: Boolean,
         iceServers: List<IceServer>,
         onReady: (PeerConnection?) -> Unit
     ) {
@@ -1175,12 +1201,43 @@ private object CallCoordinator {
             override fun onRemoveStream(stream: MediaStream) {}
             override fun onDataChannel(channel: DataChannel) {}
             override fun onRenegotiationNeeded() {}
-            override fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>) {}
+            override fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>) {
+                val incomingVideo = receiver.track() as? VideoTrack
+                if (incomingVideo != null) remoteVideoTrack = incomingVideo
+            }
         })
         audioSource = factory?.createAudioSource(MediaConstraints())
         audioTrack = factory?.createAudioTrack("f-messenger-audio", audioSource)
         audioTrack?.setEnabled(true)
         peer?.addTrack(audioTrack, listOf("f-messenger-stream"))
+        if (video) {
+            try {
+                val enumerator = Camera2Enumerator(context)
+                val cameraName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+                    ?: enumerator.deviceNames.firstOrNull()
+                    ?: throw IllegalStateException("কোনো ক্যামেরা পাওয়া যায়নি")
+                val capturer = enumerator.createCapturer(cameraName, null)
+                    ?: throw IllegalStateException("ক্যামেরা চালু করা যায়নি")
+                val source = factory?.createVideoSource(false)
+                    ?: throw IllegalStateException("ভিডিও সোর্স তৈরি হয়নি")
+                val helper = SurfaceTextureHelper.create("F-Messenger-Camera", eglBase.eglBaseContext)
+                    ?: throw IllegalStateException("ক্যামেরা প্রস্তুত হয়নি")
+                capturer.initialize(helper, context, source.capturerObserver)
+                capturer.startCapture(640, 480, 24)
+                val track = factory?.createVideoTrack("f-messenger-video", source)
+                    ?: throw IllegalStateException("ভিডিও ট্র্যাক তৈরি হয়নি")
+                track.setEnabled(true)
+                cameraCapturer = capturer
+                videoSource = source
+                surfaceTextureHelper = helper
+                videoTrack = track
+                peer?.addTrack(track, listOf("f-messenger-stream"))
+            } catch (e: Exception) {
+                callStatus = "ক্যামেরা চালু হয়নি: ${e.localizedMessage}"
+                onReady(null)
+                return
+            }
+        }
         synchronized(pendingRemoteCandidates) { pendingRemoteCandidates.clear() }
         val remotePath = if (caller) "calleeCandidates" else "callerCandidates"
         candidateListener?.remove()
@@ -1236,6 +1293,14 @@ private object CallCoordinator {
         signalListener?.remove(); signalListener = null
         candidateListener?.remove(); candidateListener = null
         peer?.close(); peer = null
+        try { cameraCapturer?.stopCapture() } catch (_: Exception) {}
+        cameraCapturer?.dispose(); cameraCapturer = null
+        videoTrack?.dispose(); videoTrack = null
+        videoSource?.dispose(); videoSource = null
+        surfaceTextureHelper?.dispose(); surfaceTextureHelper = null
+        remoteVideoTrack = null
+        activeCallIsVideo = false
+        incomingCallIsVideo = false
         synchronized(pendingRemoteCandidates) { pendingRemoteCandidates.clear() }
         audioTrack?.dispose(); audioTrack = null
         audioSource?.dispose(); audioSource = null
@@ -1243,11 +1308,42 @@ private object CallCoordinator {
         incomingCallId = null
     }
 
+    fun eglContext() = eglBase.eglBaseContext
+
     private class SimpleSdpObserver : SdpObserver {
         override fun onCreateSuccess(desc: SessionDescription) {}
         override fun onSetSuccess() {}
         override fun onCreateFailure(error: String) {}
         override fun onSetFailure(error: String) {}
+    }
+}
+
+@Composable
+private fun RemoteVideoPanel() {
+    val track = CallCoordinator.remoteVideoTrack
+    if (track != null) {
+        AndroidView(
+            modifier = Modifier.fillMaxWidth().height(230.dp),
+            factory = { ctx ->
+                SurfaceViewRenderer(ctx).apply {
+                    init(CallCoordinator.eglContext(), null)
+                    setEnableHardwareScaler(true)
+                    setMirror(false)
+                    track.addSink(this)
+                    tag = track
+                }
+            },
+            update = { view ->
+                val previous = view.tag as? VideoTrack
+                if (previous !== track) {
+                    previous?.removeSink(view)
+                    track.addSink(view)
+                    view.tag = track
+                }
+            }
+        )
+    } else {
+        Text("অপর পক্ষের ভিডিও সংযোগের অপেক্ষায়...", color = Color.Gray)
     }
 }
 
