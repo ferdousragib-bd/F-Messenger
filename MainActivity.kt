@@ -284,6 +284,79 @@ fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
 }
 
 @Composable
+fun FacebookPageSection() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("f_messenger_settings", Context.MODE_PRIVATE) }
+    var pageInput by remember { mutableStateOf(prefs.getString("facebook_page_url", "") ?: "") }
+    var savedPage by remember { mutableStateOf(pageInput) }
+    var error by remember { mutableStateOf("") }
+    val normalizedPage = remember(savedPage) {
+        val raw = savedPage.trim().let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
+        val parsed = Uri.parse(raw)
+        val host = parsed.host?.lowercase().orEmpty()
+        if (host in setOf("facebook.com", "www.facebook.com", "m.facebook.com", "fb.com", "www.fb.com", "fb.me") && parsed.path.orEmpty().length > 1) raw else ""
+    }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=8.dp)
+            .background(Cream, RoundedCornerShape(16.dp)).padding(14.dp)
+    ) {
+        Text("Facebook Page", color=Navy, style=MaterialTheme.typography.titleMedium, fontWeight=FontWeight.Bold)
+        Text("আপনার Facebook Page-এর পোস্ট, ইভেন্ট ও মেসেজ এখানে দেখুন।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value=pageInput,
+            onValueChange={ pageInput=it; error="" },
+            modifier=Modifier.fillMaxWidth(),
+            singleLine=true,
+            label={ Text("Facebook Page লিংক") },
+            placeholder={ Text("https://www.facebook.com/YourPage") }
+        )
+        if (error.isNotBlank()) Text(error, color=MaterialTheme.colorScheme.error, style=MaterialTheme.typography.bodySmall)
+        Button(
+            onClick={
+                val candidate = pageInput.trim().let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
+                val parsed = Uri.parse(candidate)
+                val host = parsed.host?.lowercase().orEmpty()
+                if (host in setOf("facebook.com", "www.facebook.com", "m.facebook.com", "fb.com", "www.fb.com", "fb.me") && parsed.path.orEmpty().length > 1) {
+                    savedPage=candidate
+                    prefs.edit().putString("facebook_page_url", candidate).apply()
+                    error=""
+                } else {
+                    error="সঠিক Facebook Page লিংক দিন।"
+                }
+            },
+            modifier=Modifier.fillMaxWidth(),
+            colors=ButtonDefaults.buttonColors(containerColor=Green)
+        ) { Text("Page যুক্ত করুন", color=Color.White) }
+        if (normalizedPage.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            AndroidView(
+                modifier=Modifier.fillMaxWidth().height(700.dp),
+                factory={ ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        settings.javaScriptEnabled=true
+                        settings.domStorageEnabled=true
+                        settings.loadsImagesAutomatically=true
+                        settings.javaScriptCanOpenWindowsAutomatically=false
+                        setBackgroundColor(android.graphics.Color.WHITE)
+                    }
+                },
+                update={ webView ->
+                    val pluginUrl = "https://www.facebook.com/plugins/page.php?href=${Uri.encode(normalizedPage)}&tabs=timeline%2Cevents%2Cmessages&width=500&height=700&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true"
+                    if (webView.tag != pluginUrl) {
+                        webView.tag=pluginUrl
+                        val html = "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'></head><body style='margin:0;padding:0;overflow-x:hidden'><iframe src='$pluginUrl' width='100%' height='700' style='border:none;overflow:hidden' scrolling='no' frameborder='0' allow='autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share'></iframe></body></html>"
+                        webView.loadDataWithBaseURL("https://www.facebook.com/", html, "text/html", "UTF-8", null)
+                    }
+                }
+            )
+        } else {
+            Text("আপনার Page লিংক যোগ করলে এখানে Facebook Page Plugin দেখা যাবে।", color=Color.Gray, style=MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
 fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
     val uid = auth.currentUser?.uid ?: return
     var name by remember { mutableStateOf("") }
@@ -368,6 +441,7 @@ fun HomeProfileScreen(onSearch:()->Unit, onMessage:()->Unit) {
                     }
                 }
             }
+            item { FacebookPageSection() }
             if (error.isNotBlank()) item { Text(error, color=MaterialTheme.colorScheme.error, modifier=Modifier.padding(12.dp)) }
             if (posts.isEmpty()) {
                 item {
