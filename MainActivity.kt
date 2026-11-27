@@ -1,5 +1,7 @@
 package com.fmessenger.chat
 
+// F Messenger Android client — current maintained build.
+
 import android.net.Uri
 import android.Manifest
 import android.content.Context
