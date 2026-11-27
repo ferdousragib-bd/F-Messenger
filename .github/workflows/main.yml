@@ -42,25 +42,11 @@ jobs:
           from pathlib import Path
           import re
 
-          # Fix MainActivity.kt syntax
+          # The repository's root MainActivity.kt is copied into the app module above.
           main_file = Path("app/src/main/java/com/fmessenger/chat/MainActivity.kt")
-          code = main_file.read_text()
-
-          old = '''            }) { Icon(Icons.Default.Search, contentDescription = "Search") })
-                  )'''
-          new = '''            }) { Icon(Icons.Default.Search, contentDescription = "Search") } }
-                  )'''
-
-          if old in code:
-              code = code.replace(old, new, 1)
-          else:
-              old2 = '''            }) { Icon(Icons.Default.Search, contentDescription = "Search") })
-                  )'''
-              if old2 not in code:
-                  raise SystemExit("Search button syntax pattern not found")
-
-          main_file.write_text(code)
-          print("MainActivity syntax patch completed")
+          if not main_file.exists():
+              raise SystemExit("MainActivity.kt source file missing")
+          print("Social app source selected")
 
           # Fix Gradle configuration
           p = Path("app/build.gradle.kts")
