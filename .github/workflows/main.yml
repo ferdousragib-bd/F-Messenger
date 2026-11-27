@@ -54,6 +54,8 @@ jobs:
           s = p.read_text()
 
           # Add media upload and remote image rendering dependencies.
+          if "com.google.firebase:firebase-functions" not in s:
+              s = re.sub(r'(dependencies\\s*\\{)', r'\\1\\n    implementation("com.google.firebase:firebase-functions:21.0.0")', s, count=1)
           if "com.google.firebase:firebase-storage" not in s:
               s = re.sub(r'(dependencies\s*\{)', r'\1\n    implementation("com.google.firebase:firebase-storage:21.0.1")', s, count=1)
           if "io.github.webrtc-sdk:android" not in s:
