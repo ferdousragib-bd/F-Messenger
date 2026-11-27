@@ -143,10 +143,11 @@ fun FeedScreen() {
                 Button(enabled=!busy&&(caption.isNotBlank()||picked!=null),onClick={scope.launch {
                     busy=true;error=""
                     try {
-                        val user=db.collection("publicProfiles").document(uid).get().await().toObject(Person::class.java)
+                        // Avoid a profile document read before posting; it fails immediately when Firestore is offline.
+                        val authorName=auth.currentUser?.displayName?.takeIf{it.isNotBlank()} ?: "ব্যবহারকারী"
                         var url="";var type="text"
-                        if(picked!=null){type=pickedType;val ref=storage.reference.child("post-media/$uid/${System.currentTimeMillis()}_${if(type=="video")"video.mp4" else "image.jpg"}");url=ref.putFile(picked!!).await().storage.downloadUrl.await().toString()}
-                        db.collection("posts").add(mapOf("authorId" to uid,"authorName" to (user?.name?.takeIf{it.isNotBlank()}?: "ব্যবহারকারী"),"authorUsername" to (user?.username?:""),"caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
+                        if(picked!=null){type=pickedType;val fileName="${System.currentTimeMillis()}_${if(type=="video")"video.mp4" else "image.jpg"}";val ref=storage.reference.child("post-media/$uid/$fileName");url=ref.putFile(picked!!).await().storage.downloadUrl.await().toString()}
+                        db.collection("posts").add(mapOf("authorId" to uid,"authorName" to authorName,"authorUsername" to "","caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
                         caption="";picked=null
                     }catch(e:Exception){error=e.localizedMessage?: "পোস্ট করা যায়নি"};busy=false
                 }}){Text(if(busy)"আপলোড..." else "পোস্ট করুন")}
