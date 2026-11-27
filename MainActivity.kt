@@ -548,49 +548,83 @@ fun ProfileScreen() {
     var name by remember{mutableStateOf("")}
     var username by remember{mutableStateOf("")}
     var phone by remember{mutableStateOf("")}
+    var bio by remember{mutableStateOf("")}
+    var avatarUrl by remember{mutableStateOf("")}
+    var coverUrl by remember{mutableStateOf("")}
+    var profileVisibility by remember{mutableStateOf("public")}
     var count by remember{mutableIntStateOf(0)}
     var busy by remember{mutableStateOf(false)}
     var status by remember{mutableStateOf("")}
     val scope= rememberCoroutineScope()
+    val pickerContext= LocalContext.current
+    val avatarPicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->
+        if(uri!=null) scope.launch{try{busy=true;val ref=storage.reference.child("profile-media/$uid/avatar_${System.currentTimeMillis()}.jpg");avatarUrl=ref.putFile(uri).await().storage.downloadUrl.await().toString();status="প্রোফাইল ছবি আপলোড হয়েছে"}catch(e:Exception){status=e.localizedMessage?: "ছবি আপলোড হয়নি"}finally{busy=false}}
+    }
+    val coverPicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->
+        if(uri!=null) scope.launch{try{busy=true;val ref=storage.reference.child("profile-media/$uid/cover_${System.currentTimeMillis()}.jpg");coverUrl=ref.putFile(uri).await().storage.downloadUrl.await().toString();status="কভার ফটো আপলোড হয়েছে"}catch(e:Exception){status=e.localizedMessage?: "কভার আপলোড হয়নি"}finally{busy=false}}
+    }
     LaunchedEffect(uid){try{
         val doc=db.collection("publicProfiles").document(uid).get().await()
         name=doc.getString("name")?: ""
         username=doc.getString("username")?: ""
+        bio=doc.getString("bio")?: ""
+        avatarUrl=doc.getString("avatarUrl")?: ""
+        coverUrl=doc.getString("coverUrl")?: ""
+        profileVisibility=doc.getString("profileVisibility")?: "public"
         phone=db.collection("users").document(uid).get().await().getString("phone")?: ""
         count=db.collection("posts").whereEqualTo("authorId",uid).get().await().size()
     }catch(e:Exception){status=e.localizedMessage?: "প্রোফাইল লোড হয়নি"}}
-    Column(Modifier.fillMaxSize().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-        Box(Modifier.size(84.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text(name.take(1).uppercase().ifBlank{"F"},color=Color.White,style=MaterialTheme.typography.headlineLarge)}
-        Spacer(Modifier.height(12.dp))
-        Text(name.ifBlank{"আপনার নাম"},style=MaterialTheme.typography.headlineSmall,color=Navy,fontWeight=FontWeight.Bold)
-        Text("@$username",color=Color.Gray)
-        Spacer(Modifier.height(12.dp))
-        Text("পোস্ট: $count",fontWeight=FontWeight.Bold)
-        HorizontalDivider(Modifier.padding(vertical=14.dp))
-        Text("প্রোফাইল সম্পাদনা",style=MaterialTheme.typography.titleMedium,color=Navy,fontWeight=FontWeight.Bold)
-        OutlinedTextField(name,{name=it},label={Text("নাম")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-        OutlinedTextField(username,{username=it.lowercase().replace(" ","")},label={Text("Username")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-        OutlinedTextField(phone,{phone=it},label={Text("ফোন নম্বর")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-        if(status.isNotBlank()) Text(status,color=if(status.startsWith("সংরক্ষিত"))Blue else MaterialTheme.colorScheme.error)
-        Spacer(Modifier.height(10.dp))
-        Button(onClick={scope.launch{
-            busy=true;status=""
-            try{
-                require(name.trim().isNotEmpty()){"নাম লিখুন"}
-                require(username.trim().length>=3){"Username কমপক্ষে ৩ অক্ষরের হতে হবে"}
-                require(phone.trim().isNotEmpty()){"ফোন নম্বর লিখুন"}
-                db.collection("publicProfiles").document(uid).set(
-                    mapOf("uid" to uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase()),
-                    com.google.firebase.firestore.SetOptions.merge()
-                ).await()
-                db.collection("users").document(uid).set(
-                    mapOf("phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()}),
-                    com.google.firebase.firestore.SetOptions.merge()
-                ).await()
-                status="সংরক্ষিত হয়েছে"
-            }catch(e:Exception){status=e.localizedMessage?: "সংরক্ষণ করা যায়নি"}
-            busy=false
-        }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"সংরক্ষণ হচ্ছে..." else "প্রোফাইল সংরক্ষণ করুন")}
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp),contentPadding=PaddingValues(bottom=24.dp)) {
+        item {
+            Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
+                if(coverUrl.isNotBlank()) AsyncImage(model=coverUrl,contentDescription="কভার ফটো",modifier=Modifier.fillMaxWidth().height(130.dp))
+                else Box(Modifier.fillMaxWidth().height(90.dp).background(Cream,RoundedCornerShape(14.dp)))
+                Spacer(Modifier.height(8.dp))
+                if(avatarUrl.isNotBlank()) AsyncImage(model=avatarUrl,contentDescription="প্রোফাইল ছবি",modifier=Modifier.size(88.dp).background(Blue,CircleShape))
+                else Box(Modifier.size(88.dp).background(Blue,CircleShape),contentAlignment=Alignment.Center){Text(name.take(1).uppercase().ifBlank{"F"},color=Color.White,style=MaterialTheme.typography.headlineLarge)}
+                Text(name.ifBlank{"আপনার নাম"},style=MaterialTheme.typography.headlineSmall,color=Navy,fontWeight=FontWeight.Bold)
+                Text("@$username",color=Color.Gray)
+                if(bio.isNotBlank()) Text(bio,color=Navy)
+                Text("পোস্ট: $count",fontWeight=FontWeight.Bold)
+            }
+        }
+        item {
+            Text("প্রোফাইল সম্পাদনা",style=MaterialTheme.typography.titleMedium,color=Navy,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=14.dp))
+            OutlinedTextField(name,{name=it},label={Text("নাম")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+            OutlinedTextField(username,{username=it.lowercase().replace(" ","")},label={Text("Username")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+            OutlinedTextField(bio,{bio=it},label={Text("ছোট বায়ো")},modifier=Modifier.fillMaxWidth(),minLines=2,maxLines=4)
+            OutlinedTextField(phone,{phone=it},label={Text("ফোন নম্বর (ঐচ্ছিক)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick={avatarPicker.launch("image/*")},modifier=Modifier.weight(1f),enabled=!busy){Text("প্রোফাইল ছবি")}
+                OutlinedButton(onClick={coverPicker.launch("image/*")},modifier=Modifier.weight(1f),enabled=!busy){Text("কভার ফটো")}
+            }
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("প্রাইভেট প্রোফাইল",fontWeight=FontWeight.SemiBold,color=Navy)
+                    Text("চালু করলে শুধু আপনি ও অনুমোদিত ফলোয়াররা প্রোফাইল দেখতে পারবে",style=MaterialTheme.typography.bodySmall,color=Color.Gray)
+                }
+                Switch(checked=profileVisibility=="private",onCheckedChange={profileVisibility=if(it)"private" else "public"})
+            }
+            if(status.isNotBlank()) Text(status,color=if(status.contains("হয়েছে"))Blue else MaterialTheme.colorScheme.error)
+            Button(onClick={scope.launch{
+                busy=true;status=""
+                try{
+                    require(name.trim().isNotEmpty()){"নাম লিখুন"}
+                    require(username.trim().length>=3){"Username কমপক্ষে ৩ অক্ষরের হতে হবে"}
+                    db.collection("publicProfiles").document(uid).set(
+                        mapOf("uid" to uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),
+                            "bio" to bio.trim(),"avatarUrl" to avatarUrl,"coverUrl" to coverUrl,"profileVisibility" to profileVisibility),
+                        com.google.firebase.firestore.SetOptions.merge()
+                    ).await()
+                    db.collection("users").document(uid).set(
+                        mapOf("phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()}),
+                        com.google.firebase.firestore.SetOptions.merge()
+                    ).await()
+                    status="প্রোফাইল সংরক্ষিত হয়েছে"
+                }catch(e:Exception){status=e.localizedMessage?: "সংরক্ষণ করা যায়নি"}
+                busy=false
+            }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"সংরক্ষণ হচ্ছে..." else "প্রোফাইল সংরক্ষণ করুন")}
+        }
     }
 }
 
