@@ -151,7 +151,7 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
 fun MainTabs(onChat:(Person)->Unit,onSignOut:()->Unit) {
     var tab by remember { mutableStateOf("ফিড") }
     var isAdmin by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { try { isAdmin = auth.currentUser?.getIdTokenResult(true)?.await()?.claims?.get("admin") == true } catch (_: Exception) { isAdmin = false } }
+    LaunchedEffect(Unit) { try { isAdmin = auth.currentUser?.getIdToken(true)?.await()?.claims?.get("admin") == true } catch (_: Exception) { isAdmin = false } }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=16.dp,vertical=13.dp),verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){Text("Pasha অ্যাপ",color=Color.White,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text("Connect • Share • Discover",color=Color(0xFFD8E8FF),style=MaterialTheme.typography.labelSmall)}
