@@ -43,6 +43,16 @@ GitHub Actions workflow-টি চালাতে repository secrets প্র�
 - Storage upload/download access, MIME type ও size checks বাস্তব Firebase Emulator/production project-এ পরীক্ষা
 - Firestore Rules/Storage Rules unit tests এবং দুইটি পৃথক test account দিয়ে end-to-end পরীক্ষা
 
+## WebRTC TURN relay setup
+
+TURN integration source is included:
+- `turn/`: Coturn VPS Docker Compose template and Bengali setup guide
+- `functions/index.js`: authenticated Firebase callable that creates 1-hour temporary TURN credentials
+- `.github/workflows/deploy-turn.yml`: manual Cloud Function deployment workflow
+- Android voice-call code requests temporary credentials and adds TURN + Google STUN; if credential service is unavailable, it falls back to STUN-only (direct peer-to-peer may still fail on restrictive networks).
+
+**বাস্তব TURN চালু করতে এখনও একটি public-IP Linux VPS এবং Firebase secrets configure করতে হবে।** Repository commit বা APK build করলেই Coturn server চালু হয় না। বিস্তারিত: [turn/README-BN.md](turn/README-BN.md).
+
 ## Android build
 GitHub Actions-এর **Build F Messenger APK** workflow debug APK build করে artifact হিসেবে আপলোড করে। Build success কেবল compilation সফল হওয়া বোঝায়; Firebase backend runtime-এ কাজ করছে তার প্রমাণ নয়।
 
