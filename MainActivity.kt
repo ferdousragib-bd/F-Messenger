@@ -83,11 +83,12 @@ fun MessengerApp() {
     var uid by remember { mutableStateOf(auth.currentUser?.uid) }
     var selected by remember { mutableStateOf<Person?>(null) }
     DisposableEffect(Unit) { val l=FirebaseAuth.AuthStateListener { uid=it.currentUser?.uid }; auth.addAuthStateListener(l); onDispose { auth.removeAuthStateListener(l) } }
+    val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(uid) {
         val currentUid = uid
         if (currentUid != null) {
-            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(LocalContext.current, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
             FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
