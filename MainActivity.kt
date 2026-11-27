@@ -82,7 +82,7 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
             require(email.contains("@") && password.length>=6){"সঠিক ইমেইল ও কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন"}
             if(register){ require(name.isNotBlank()&&username.length>=3&&phone.isNotBlank()){"নাম, ৩ অক্ষরের Username ও ফোন নম্বর দিন"}
                 val u=auth.createUserWithEmailAndPassword(email.trim(),password).await().user!!
-                db.collection("users").document(u.uid).set(mapOf("uid" to u.uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()},"email" to email.trim(),"createdAt" to System.currentTimeMillis())).await(); onSignedIn(u.uid)
+                db.collection("users").document(u.uid).set(mapOf("uid" to u.uid,"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()},"email" to email.trim(),"createdAt" to System.currentTimeMillis())).await(); db.collection("publicProfiles").document(u.uid).set(mapOf("uid" to u.uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"createdAt" to System.currentTimeMillis())).await(); onSignedIn(u.uid)
             } else onSignedIn(auth.signInWithEmailAndPassword(email.trim(),password).await().user!!.uid)
         }catch(e:Exception){error=e.localizedMessage?: "আবার চেষ্টা করুন"};busy=false }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"অপেক্ষা করুন..." else if(register)"অ্যাকাউন্ট তৈরি করুন" else "লগইন")}
         if(!register) TextButton(onClick={scope.launch { error=""; if(!email.contains("@")){error="পাসওয়ার্ড রিসেট করতে ইমেইল লিখুন"}else try{auth.sendPasswordResetEmail(email.trim()).await();error="পাসওয়ার্ড রিসেট লিংক ইমেইলে পাঠানো হয়েছে"}catch(e:Exception){error=e.localizedMessage?: "রিসেট ইমেইল পাঠানো যায়নি"} }},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("পাসওয়ার্ড ভুলে গেছেন?")}
@@ -135,7 +135,7 @@ fun FeedScreen() {
                 Button(enabled=!busy&&(caption.isNotBlank()||picked!=null),onClick={scope.launch {
                     busy=true;error=""
                     try {
-                        val user=db.collection("users").document(uid).get().await().toObject(Person::class.java)
+                        val user=db.collection("publicProfiles").document(uid).get().await().toObject(Person::class.java)
                         var url="";var type="text"
                         if(picked!=null){type=pickedType;val ref=storage.reference.child("post-media/$uid/${System.currentTimeMillis()}_${if(type=="video")"video.mp4" else "image.jpg"}");url=ref.putFile(picked!!).await().storage.downloadUrl.await().toString()}
                         db.collection("posts").add(mapOf("authorId" to uid,"authorName" to (user?.name?:auth.currentUser?.email?: "ব্যবহারকারী"),"authorUsername" to (user?.username?:""),"caption" to caption.trim(),"mediaUrl" to url,"mediaType" to type,"visibility" to "public","createdAt" to System.currentTimeMillis())).await()
@@ -196,7 +196,7 @@ fun DiscoverScreen(onChat:(Person)->Unit) {
     var query by remember{mutableStateOf("")};var results by remember{mutableStateOf(listOf<Person>())};var error by remember{mutableStateOf("")};val scope= rememberCoroutineScope();val uid=auth.currentUser?.uid?:return
     Column(Modifier.fillMaxSize().padding(12.dp)){
         Text("মানুষ খুঁজুন",style=MaterialTheme.typography.titleLarge,color=Navy,fontWeight=FontWeight.Bold)
-        OutlinedTextField(query,{query=it},modifier=Modifier.fillMaxWidth(),label={Text("নাম, Username বা ফোন নম্বর")},trailingIcon={TextButton(onClick={scope.launch{error="";try{val q=query.trim();if(q.isBlank()){results=emptyList();return@launch};val a=db.collection("users").orderBy("name").startAt(q).endAt(q+"").limit(20).get().await();val b=db.collection("users").whereEqualTo("usernameLower",q.lowercase()).limit(20).get().await();val digits=q.filter{it.isDigit()};val c=if(digits.isNotBlank())db.collection("users").whereEqualTo("phoneDigits",digits).limit(20).get().await() else null;results=(a.documents+b.documents+(c?.documents?: emptyList())).mapNotNull{it.toObject(Person::class.java)}.filter{it.uid!=uid}.distinctBy{it.uid}}catch(e:Exception){error=e.localizedMessage?: "খোঁজা যায়নি"}}}){Text("খুঁজুন")}})
+        OutlinedTextField(query,{query=it},modifier=Modifier.fillMaxWidth(),label={Text("নাম, Username বা ফোন নম্বর")},trailingIcon={TextButton(onClick={scope.launch{error="";try{val q=query.trim();if(q.isBlank()){results=emptyList();return@launch};val a=db.collection("publicProfiles").orderBy("name").startAt(q).endAt(q+"").limit(20).get().await();val b=db.collection("publicProfiles").whereEqualTo("usernameLower",q.lowercase()).limit(20).get().await();results=(a.documents+b.documents).mapNotNull{it.toObject(Person::class.java)}.filter{it.uid!=uid}.distinctBy{it.uid}}catch(e:Exception){error=e.localizedMessage?: "খোঁজা যায়নি"}}}){Text("খুঁজুন")}})
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         LazyColumn{items(results,key={it.uid}){person->PersonRow(person,onChat)}}
     }
@@ -217,7 +217,7 @@ fun PersonRow(person:Person,onChat:(Person)->Unit) {
 @Composable
 fun ChatsScreen(onChat:(Person)->Unit) {
     val uid=auth.currentUser?.uid?:return;var people by remember{mutableStateOf(listOf<Person>())}
-    LaunchedEffect(uid){try{val chats=db.collection("chats").whereArrayContains("members",uid).get().await();val ids=chats.documents.flatMap{(it.get("members") as? List<*>)?.filterIsInstance<String>()?:emptyList()}.filter{it!=uid}.distinct();people=ids.mapNotNull{id->db.collection("users").document(id).get().await().toObject(Person::class.java)}}catch(_:Exception){}}
+    LaunchedEffect(uid){try{val chats=db.collection("chats").whereArrayContains("members",uid).get().await();val ids=chats.documents.flatMap{(it.get("members") as? List<*>)?.filterIsInstance<String>()?:emptyList()}.filter{it!=uid}.distinct();people=ids.mapNotNull{id->db.collection("publicProfiles").document(id).get().await().toObject(Person::class.java)}}catch(_:Exception){}}
     Column(Modifier.fillMaxSize().padding(12.dp)){Text("আপনার চ্যাট",style=MaterialTheme.typography.titleLarge,color=Navy,fontWeight=FontWeight.Bold);if(people.isEmpty())Text("কাউকে খুঁজে নিয়ে চ্যাট শুরু করুন।",color=Color.Gray);LazyColumn{items(people){PersonRow(it,onChat)}}}
 }
 
