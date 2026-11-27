@@ -1,5 +1,5 @@
 
-name: Build F Messenger APK
+name: Build Pasha App APK
 
 on:
   workflow_dispatch:
@@ -35,6 +35,8 @@ jobs:
         run: |
           unzip -o FMessenger-Android-Project.zip -d source
           cp MainActivity.kt source/FMessenger/app/src/main/java/com/fmessenger/chat/MainActivity.kt
+          mkdir -p source/FMessenger/app/src/main/res/drawable-nodpi
+          cp pasha_icon.jpg source/FMessenger/app/src/main/res/drawable-nodpi/pasha_icon.jpg
 
       - name: Fix MainActivity and Gradle
         working-directory: source/FMessenger
@@ -116,8 +118,11 @@ jobs:
               tag = f'<uses-permission android:name="{permission}" />'
               if permission not in xml:
                   xml = xml.replace("<application", tag + "\\n    <application", 1)
+          xml = xml.replace('android:label="F Messenger"', 'android:label="Pasha অ্যাপ"')
+          if "android:icon=" not in xml:
+              xml = xml.replace("<application", '<application android:icon="@drawable/pasha_icon"', 1)
           manifest.write_text(xml)
-          print("Gradle and calling permissions configured")
+          print("Gradle, calling permissions, Pasha name and icon configured")
           PY
 
 
