@@ -551,11 +551,15 @@ fun ChatScreen(person:Person,onBack:()->Unit) {
     }
     DisposableEffect(chatId){val l:ListenerRegistration=db.collection("chats").document(chatId).collection("messages").orderBy("createdAt").addSnapshotListener{snap,e->if(e!=null)error=e.localizedMessage?: "মেসেজ লোড হয়নি" else messages=snap?.documents?.mapNotNull{d->d.toObject(ChatMessage::class.java)?.copy(id=d.id)}?:emptyList()};onDispose{l.remove()}}
     Column(Modifier.fillMaxSize()){
-        Row(Modifier.fillMaxWidth().background(Navy).padding(12.dp),verticalAlignment=Alignment.CenterVertically){TextButton(onClick=onBack){Text("‹",color=Color.White,style=MaterialTheme.typography.headlineMedium)};Column{Text(person.name,color=Color.White,fontWeight=FontWeight.Bold);Text("@${person.username}",color=Color(0xFFD8E8FF))};Spacer(Modifier.weight(1f));TextButton(onClick={
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                CallCoordinator.placeVoiceCall(context, person)
-            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-        }) { Text("📞", color=Color.White) }}
+        Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=8.dp, vertical=10.dp),verticalAlignment=Alignment.CenterVertically){
+            TextButton(onClick=onBack){Text("‹",color=Color.White,style=MaterialTheme.typography.headlineMedium)}
+            Column(Modifier.weight(1f)){Text(person.name,color=Color.White,fontWeight=FontWeight.Bold);Text("@${person.username}",color=Color(0xFFD8E8FF))}
+            TextButton(onClick={
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                    CallCoordinator.placeVoiceCall(context, person)
+                else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            }) { Text("📞 কল", color=Color.White, fontWeight=FontWeight.Bold) }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)){items(messages){m->Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==uid)Arrangement.End else Arrangement.Start){Surface(color=if(m.senderId==uid)Blue else Color.White,shape=RoundedCornerShape(15.dp)){Text(m.text,Modifier.padding(12.dp),color=if(m.senderId==uid)Color.White else Navy)}};Spacer(Modifier.height(7.dp))}}
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp),verticalAlignment=Alignment.CenterVertically){OutlinedTextField(draft,{draft=it},modifier=Modifier.weight(1f),placeholder={Text("মেসেজ লিখুন...")});TextButton(onClick={val msg=draft.trim();if(msg.isNotBlank())scope.launch{try{val ref=db.collection("chats").document(chatId);ref.set(mapOf("members" to listOf(uid,person.uid),"lastMessage" to msg,"updatedAt" to System.currentTimeMillis())).await();ref.collection("messages").add(mapOf("senderId" to uid,"text" to msg,"createdAt" to System.currentTimeMillis())).await();draft=""}catch(e:Exception){error=e.localizedMessage?: "পাঠানো যায়নি"}}}){Text("পাঠান")}}
