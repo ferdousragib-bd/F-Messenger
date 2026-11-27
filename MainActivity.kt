@@ -22,6 +22,9 @@ import org.webrtc.MediaStream
 import org.webrtc.RtpReceiver
 import org.webrtc.DataChannel
 import android.os.Bundle
+import android.media.MediaRecorder
+import android.media.MediaPlayer
+import java.io.File
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -65,7 +68,7 @@ private val storage by lazy { FirebaseStorage.getInstance() }
 
 data class Person(val uid:String="", val name:String="", val username:String="", val phone:String="")
 data class FeedPost(val id:String="", val authorId:String="", val authorName:String="", val authorUsername:String="", val caption:String="", val mediaUrl:String="", val mediaType:String="text", val createdAt:Long=0L)
-data class ChatMessage(val id:String="", val senderId:String="", val text:String="", val createdAt:Long=0L)
+data class ChatMessage(val id:String="", val senderId:String="", val text:String="", val mediaUrl:String="", val mediaType:String="text", val createdAt:Long=0L)
 data class CommentItem(val id:String="", val authorId:String="", val authorName:String="", val text:String="", val createdAt:Long=0L)
 
 class MainActivity : ComponentActivity() {
@@ -632,6 +635,10 @@ private fun IncomingCallHost() {
 @Composable
 fun ChatScreen(person:Person,onBack:()->Unit) {
     val uid=auth.currentUser?.uid?:return;val chatId=listOf(uid,person.uid).sorted().joinToString("_");var messages by remember{mutableStateOf(listOf<ChatMessage>())};var draft by remember{mutableStateOf("")};var error by remember{mutableStateOf("")};val scope= rememberCoroutineScope();val context= LocalContext.current
+    var recording by remember { mutableStateOf(false) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var voiceFile by remember { mutableStateOf<File?>(null) }
+    var voiceBusy by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) CallCoordinator.placeVoiceCall(context, person) else error = "কল করতে মাইক্রোফোনের অনুমতি দিন"
     }
@@ -646,8 +653,53 @@ fun ChatScreen(person:Person,onBack:()->Unit) {
                 else micPermission.launch(Manifest.permission.RECORD_AUDIO)
             }) { Text("📞 কল", color=Color.White, fontWeight=FontWeight.Bold) }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)){items(messages){m->Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==uid)Arrangement.End else Arrangement.Start){Surface(color=if(m.senderId==uid)Blue else Color.White,shape=RoundedCornerShape(15.dp)){Text(m.text,Modifier.padding(12.dp),color=if(m.senderId==uid)Color.White else Navy)}};Spacer(Modifier.height(7.dp))}}
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)){items(messages){m->
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==uid)Arrangement.End else Arrangement.Start){
+                Surface(color=if(m.senderId==uid)Blue else Color.White,shape=RoundedCornerShape(15.dp)){
+                    if(m.mediaType=="audio" && m.mediaUrl.isNotBlank()) {
+                        TextButton(onClick={
+                            try { MediaPlayer().apply { setDataSource(m.mediaUrl); setOnPreparedListener { it.start() }; prepareAsync() } }
+                            catch(e:Exception){ error=e.localizedMessage ?: "ভয়েস মেসেজ চালানো যায়নি" }
+                        }) { Text("▶ ভয়েস মেসেজ", color=if(m.senderId==uid)Color.White else Navy) }
+                    } else Text(m.text,Modifier.padding(12.dp),color=if(m.senderId==uid)Color.White else Navy)
+                }
+            };Spacer(Modifier.height(7.dp))
+        }}
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-        Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp),verticalAlignment=Alignment.CenterVertically){OutlinedTextField(draft,{draft=it},modifier=Modifier.weight(1f),placeholder={Text("মেসেজ লিখুন...")});TextButton(onClick={val msg=draft.trim();if(msg.isNotBlank())scope.launch{try{val ref=db.collection("chats").document(chatId);ref.set(mapOf("members" to listOf(uid,person.uid),"lastMessage" to msg,"updatedAt" to System.currentTimeMillis())).await();ref.collection("messages").add(mapOf("senderId" to uid,"text" to msg,"createdAt" to System.currentTimeMillis())).await();draft=""}catch(e:Exception){error=e.localizedMessage?: "পাঠানো যায়নি"}}}){Text("পাঠান")}}
+        Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp),verticalAlignment=Alignment.CenterVertically){
+            OutlinedTextField(draft,{draft=it},modifier=Modifier.weight(1f),placeholder={Text("মেসেজ লিখুন...")})
+            TextButton(enabled=!voiceBusy,onClick={
+                if(!recording){
+                    try {
+                        val file=File(context.cacheDir,"voice_${System.currentTimeMillis()}.m4a")
+                        val r=MediaRecorder()
+                        r.setAudioSource(MediaRecorder.AudioSource.MIC)
+                        r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                        r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                        r.setAudioEncodingBitRate(64000)
+                        r.setAudioSamplingRate(44100)
+                        r.setOutputFile(file.absolutePath)
+                        r.prepare();r.start();recorder=r;voiceFile=file;recording=true;error="রেকর্ড হচ্ছে..."
+                    } catch(e:Exception){recorder?.release();recorder=null;recording=false;error=e.localizedMessage ?: "রেকর্ড শুরু হয়নি"}
+                } else {
+                    try { recorder?.stop();recorder?.release();recorder=null;recording=false;voiceBusy=true;error="ভয়েস মেসেজ পাঠানো হচ্ছে..." }
+                    catch(e:Exception){recorder?.release();recorder=null;recording=false;voiceBusy=false;error="রেকর্ডিং সংরক্ষণ করা যায়নি"}
+                    val file=voiceFile
+                    if(file!=null) scope.launch {
+                        try {
+                            val ref=db.collection("chats").document(chatId)
+                            val remote=storage.reference.child("chat-media/$chatId/${file.name}")
+                            remote.putFile(Uri.fromFile(file)).await()
+                            val url=remote.downloadUrl.await().toString()
+                            ref.set(mapOf("members" to listOf(uid,person.uid),"lastMessage" to "🎤 ভয়েস মেসেজ","updatedAt" to System.currentTimeMillis())).await()
+                            ref.collection("messages").add(mapOf("senderId" to uid,"text" to "","mediaUrl" to url,"mediaType" to "audio","createdAt" to System.currentTimeMillis())).await()
+                            file.delete();voiceFile=null;error=""
+                        } catch(e:Exception){error=e.localizedMessage ?: "ভয়েস মেসেজ পাঠানো যায়নি"}
+                        voiceBusy=false
+                    } else voiceBusy=false
+                }
+            }){Text(if(voiceBusy)"..." else if(recording)"■" else "🎤")}
+            TextButton(onClick={val msg=draft.trim();if(msg.isNotBlank())scope.launch{try{val ref=db.collection("chats").document(chatId);ref.set(mapOf("members" to listOf(uid,person.uid),"lastMessage" to msg,"updatedAt" to System.currentTimeMillis())).await();ref.collection("messages").add(mapOf("senderId" to uid,"text" to msg,"mediaType" to "text","createdAt" to System.currentTimeMillis())).await();draft=""}catch(e:Exception){error=e.localizedMessage?: "পাঠানো যায়নি"}}}){Text("পাঠান")}
+        }
     }
 }
