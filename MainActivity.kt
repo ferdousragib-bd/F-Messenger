@@ -83,7 +83,15 @@ fun AuthScreen(onSignedIn:(String)->Unit) {
             if(register){ require(name.isNotBlank()&&username.length>=3&&phone.isNotBlank()){"নাম, ৩ অক্ষরের Username ও ফোন নম্বর দিন"}
                 val u=auth.createUserWithEmailAndPassword(email.trim(),password).await().user!!
                 db.collection("users").document(u.uid).set(mapOf("uid" to u.uid,"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()},"email" to email.trim(),"createdAt" to System.currentTimeMillis())).await(); db.collection("publicProfiles").document(u.uid).set(mapOf("uid" to u.uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"createdAt" to System.currentTimeMillis())).await(); onSignedIn(u.uid)
-            } else onSignedIn(auth.signInWithEmailAndPassword(email.trim(),password).await().user!!.uid)
+            } else {
+                val signed=auth.signInWithEmailAndPassword(email.trim(),password).await().user!!
+                val old=db.collection("users").document(signed.uid).get().await()
+                val publicRef=db.collection("publicProfiles").document(signed.uid)
+                if(!publicRef.get().await().exists() && old.exists()) {
+                    publicRef.set(mapOf("uid" to signed.uid,"name" to (old.getString("name") ?: "ব্যবহারকারী"),"username" to (old.getString("username") ?: ""),"usernameLower" to (old.getString("usernameLower") ?: ""))).await()
+                }
+                onSignedIn(signed.uid)
+            }
         }catch(e:Exception){error=e.localizedMessage?: "আবার চেষ্টা করুন"};busy=false }},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text(if(busy)"অপেক্ষা করুন..." else if(register)"অ্যাকাউন্ট তৈরি করুন" else "লগইন")}
         if(!register) TextButton(onClick={scope.launch { error=""; if(!email.contains("@")){error="পাসওয়ার্ড রিসেট করতে ইমেইল লিখুন"}else try{auth.sendPasswordResetEmail(email.trim()).await();error="পাসওয়ার্ড রিসেট লিংক ইমেইলে পাঠানো হয়েছে"}catch(e:Exception){error=e.localizedMessage?: "রিসেট ইমেইল পাঠানো যায়নি"} }},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("পাসওয়ার্ড ভুলে গেছেন?")}
         TextButton(onClick={register=!register;error=""},modifier=Modifier.align(Alignment.CenterHorizontally)){Text(if(register)"আগে অ্যাকাউন্ট আছে? লগইন" else "নতুন অ্যাকাউন্ট খুলুন")}
@@ -232,10 +240,10 @@ fun ProfileScreen() {
     var status by remember{mutableStateOf("")}
     val scope= rememberCoroutineScope()
     LaunchedEffect(uid){try{
-        val doc=db.collection("users").document(uid).get().await()
+        val doc=db.collection("publicProfiles").document(uid).get().await()
         name=doc.getString("name")?: ""
         username=doc.getString("username")?: ""
-        phone=doc.getString("phone")?: ""
+        phone=db.collection("users").document(uid).get().await().getString("phone")?: ""
         count=db.collection("posts").whereEqualTo("authorId",uid).get().await().size()
     }catch(e:Exception){status=e.localizedMessage?: "প্রোফাইল লোড হয়নি"}}
     Column(Modifier.fillMaxSize().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally) {
@@ -258,8 +266,13 @@ fun ProfileScreen() {
                 require(name.trim().isNotEmpty()){"নাম লিখুন"}
                 require(username.trim().length>=3){"Username কমপক্ষে ৩ অক্ষরের হতে হবে"}
                 require(phone.trim().isNotEmpty()){"ফোন নম্বর লিখুন"}
-                db.collection("users").document(uid).update(
-                    mapOf("name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase(),"phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()})
+                db.collection("publicProfiles").document(uid).set(
+                    mapOf("uid" to uid,"name" to name.trim(),"username" to username.trim(),"usernameLower" to username.trim().lowercase()),
+                    com.google.firebase.firestore.SetOptions.merge()
+                ).await()
+                db.collection("users").document(uid).set(
+                    mapOf("phone" to phone.trim(),"phoneDigits" to phone.filter{it.isDigit()}),
+                    com.google.firebase.firestore.SetOptions.merge()
                 ).await()
                 status="সংরক্ষিত হয়েছে"
             }catch(e:Exception){status=e.localizedMessage?: "সংরক্ষণ করা যায়নি"}
