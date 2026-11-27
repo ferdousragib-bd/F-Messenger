@@ -8,6 +8,7 @@ on:
       - 'FMessenger-Android-Project.zip'
       - 'MainActivity.kt'
       - 'pasha_icon.jpg'
+      - 'google-services.json'
       - '.github/workflows/main.yml'
 
 jobs:
@@ -38,6 +39,7 @@ jobs:
           cp MainActivity.kt source/FMessenger/app/src/main/java/com/fmessenger/chat/MainActivity.kt
           mkdir -p source/FMessenger/app/src/main/res/drawable-nodpi
           cp pasha_icon.jpg source/FMessenger/app/src/main/res/drawable-nodpi/pasha_icon.jpg
+          cp google-services.json source/FMessenger/app/google-services.json
 
       - name: Fix MainActivity and Gradle
         working-directory: source/FMessenger
