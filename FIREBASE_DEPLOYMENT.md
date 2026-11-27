@@ -2,17 +2,16 @@
 
 The repository includes Firebase configuration, Firestore rules/indexes, and Storage rules.
 
-## Enable phone-number sign-in (required)
+## Enable free email/password sign-in (required)
 
 1. Open Firebase Console: https://console.firebase.google.com/
 2. Select project `f-messenger-9f14a`.
 3. Open **Authentication → Sign-in method** (or **Sign-in providers**).
-4. Enable **Phone** and save.
-5. In **Authentication → Settings → SMS region policy**, allow Bangladesh (+880). Keep other regions disabled unless the service is intended for them.
-6. In **Project settings → General → Your apps → Android app** for package `com.fmessenger.chat`, add the app's SHA-1 and SHA-256 signing certificate fingerprints. The debug fingerprints can be obtained with `./gradlew signingReport`; add the release certificate fingerprints separately before publishing.
-7. Confirm the Android app has the matching `google-services.json`.
+4. Enable **Email/Password** and save. Email-link sign-in is optional and is not used by this Android screen.
+5. Do not enable Phone Authentication if you want to avoid SMS charges. The Android app now uses email/password and does not request SMS OTP.
+6. Confirm the Android app has the matching `google-services.json`.
 
-Firebase Phone Authentication sends an SMS verification code. SMS delivery can incur charges and is subject to Firebase quotas and abuse protection. Use Firebase Authentication test phone numbers only for development; never share real OTP codes.
+Email/password authentication does not require a Google Cloud Billing account for SMS. Keep the Firebase project on the Spark plan if you want to avoid linking a billing account. Firestore and Storage usage remains subject to their free-plan quotas and limits.
 
 ## One-time GitHub setup for Firebase rules deployment
 
@@ -29,14 +28,11 @@ Open **Actions → Deploy F Messenger Firebase Rules → Run workflow**. Wait fo
 
 ## Before public launch
 
-- Authentication → Sign-in method → **Phone** is enabled.
-- Bangladesh (+880) is allowed in the SMS region policy.
+- Authentication → Sign-in method → **Email/Password** is enabled.
 - Firestore Database exists in the intended project.
-- Storage is enabled.
+- Storage is enabled and usage stays within the free-plan quota.
 - Android package name is `com.fmessenger.chat`.
 - The matching `google-services.json` is included.
-- Test OTP login on a real Android device using a number you control.
+- Test new account registration and existing-account login on a real Android device.
 
-Existing email/password accounts are not automatically converted to phone accounts. Users must sign in using the phone number that has been verified and linked to their Firebase account, or complete a separate account migration.
-
-A successful Android APK build does not prove that Firebase SMS delivery works. End-to-end testing on a real phone is still required.
+A successful Android APK build does not prove that Firebase services are configured correctly. End-to-end testing against the intended Firebase project is still required.
