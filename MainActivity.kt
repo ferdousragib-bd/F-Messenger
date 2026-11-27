@@ -1138,7 +1138,7 @@ private object CallCoordinator {
         callStatus = "নিরাপদ কল সার্ভার প্রস্তুত করা হচ্ছে..."
         FirebaseFunctions.getInstance().getHttpsCallable("getTurnCredentials").call()
             .addOnSuccessListener { result ->
-                val data = result.data as? Map<*, *>
+                val data = result.getData() as? Map<*, *>
                 val urls = (data?.get("urls") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
                 val username = data?.get("username") as? String
                 val credential = data?.get("credential") as? String
