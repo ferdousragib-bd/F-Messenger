@@ -1129,23 +1129,33 @@ private object CallCoordinator {
     }
 
     private fun createPeer(context: Context, callId: String, caller: Boolean, onReady: (PeerConnection?) -> Unit) {
-        // Metered TURN credentials. These are embedded as explicitly requested.
-        // WARNING: APKs and public source repositories can expose these credentials.
-        val meteredUsername = "8a999f7f2a241910a335f635"
-        val meteredCredential = "SxG/L3xCwVwCOgO9"
-        val iceServers = listOf(
-            IceServer.builder("stun:stun.relay.metered.ca:80").createIceServer(),
-            IceServer.builder("turn:global.relay.metered.ca:80")
-                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer(),
-            IceServer.builder("turn:global.relay.metered.ca:80?transport=tcp")
-                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer(),
-            IceServer.builder("turn:global.relay.metered.ca:443")
-                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer(),
-            IceServer.builder("turns:global.relay.metered.ca:443?transport=tcp")
-                .setUsername(meteredUsername).setPassword(meteredCredential).createIceServer()
+        // Request short-lived TURN credentials from the authenticated Firebase callable.
+        // Never ship static TURN usernames/passwords inside the APK or source repository.
+        val stunOnly = listOf(
+            IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+            IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
         )
-        callStatus = "Metered TURN দিয়ে সংযোগের চেষ্টা করা হচ্ছে"
-        createPeerWithIceServers(context, callId, caller, iceServers, onReady)
+        callStatus = "নিরাপদ কল সার্ভার প্রস্তুত করা হচ্ছে..."
+        FirebaseFunctions.getInstance().getHttpsCallable("getTurnCredentials").call()
+            .addOnSuccessListener { result ->
+                val data = result.data as? Map<*, *>
+                val urls = (data?.get("urls") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                val username = data?.get("username") as? String
+                val credential = data?.get("credential") as? String
+                val servers = mutableListOf<IceServer>().apply { addAll(stunOnly) }
+                if (urls.isNotEmpty() && !username.isNullOrBlank() && !credential.isNullOrBlank()) {
+                    urls.forEach { url ->
+                        servers.add(IceServer.builder(url).setUsername(username).setPassword(credential).createIceServer())
+                    }
+                }
+                callStatus = if (servers.size > stunOnly.size) "নিরাপদ TURN সংযোগ প্রস্তুত" else "সরাসরি নেটওয়ার্ক সংযোগের চেষ্টা"
+                createPeerWithIceServers(context, callId, caller, servers, onReady)
+            }
+            .addOnFailureListener {
+                // Keep direct peer-to-peer calling available when TURN is not configured.
+                callStatus = "TURN সার্ভার পাওয়া যায়নি; সরাসরি সংযোগের চেষ্টা চলছে"
+                createPeerWithIceServers(context, callId, caller, stunOnly, onReady)
+            }
     }
 
     private fun createPeerWithIceServers(
