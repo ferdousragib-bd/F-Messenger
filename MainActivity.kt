@@ -326,6 +326,23 @@ private object CallCoordinator {
     private var localUid: String = ""
     private var remoteUid: String = ""
     private var localCandidatePath: String = ""
+    private val pendingRemoteCandidates = mutableListOf<IceCandidate>()
+
+    private fun addOrQueueRemoteCandidate(candidate: IceCandidate) {
+        val currentPeer = peer ?: return
+        if (currentPeer.remoteDescription != null) currentPeer.addIceCandidate(candidate)
+        else synchronized(pendingRemoteCandidates) { pendingRemoteCandidates.add(candidate) }
+    }
+
+    private fun flushRemoteCandidates() {
+        val currentPeer = peer ?: return
+        val queued = synchronized(pendingRemoteCandidates) {
+            val copy = pendingRemoteCandidates.toList()
+            pendingRemoteCandidates.clear()
+            copy
+        }
+        queued.forEach { currentPeer.addIceCandidate(it) }
+    }
 
     private fun initFactory(context: Context) {
         if (factory != null) return
@@ -419,6 +436,7 @@ private object CallCoordinator {
                 val offer = SessionDescription(SessionDescription.Type.OFFER, offerMap["sdp"] as? String ?: return@addOnSuccessListener)
                 peer?.setRemoteDescription(object : SdpObserver {
                     override fun onSetSuccess() {
+                        flushRemoteCandidates()
                         peer?.createAnswer(object : SdpObserver {
                             override fun onCreateSuccess(desc: SessionDescription) {
                                 peer?.setLocalDescription(SimpleSdpObserver(), desc)
@@ -470,6 +488,7 @@ private object CallCoordinator {
         audioTrack = factory?.createAudioTrack("f-messenger-audio", audioSource)
         audioTrack?.setEnabled(true)
         peer?.addTrack(audioTrack, listOf("f-messenger-stream"))
+        synchronized(pendingRemoteCandidates) { pendingRemoteCandidates.clear() }
         val remotePath = if (caller) "calleeCandidates" else "callerCandidates"
         candidateListener?.remove()
         candidateListener = db.collection("calls").document(callId).collection(remotePath).addSnapshotListener { snap, _ ->
@@ -478,7 +497,7 @@ private object CallCoordinator {
                 val mid = d.getString("sdpMid")
                 val index = (d.getLong("sdpMLineIndex") ?: 0L).toInt()
                 val candidate = d.getString("candidate")
-                if (mid != null && candidate != null) peer?.addIceCandidate(IceCandidate(mid, index, candidate))
+                if (mid != null && candidate != null) addOrQueueRemoteCandidate(IceCandidate(mid, index, candidate))
             }
         }
     }
@@ -496,7 +515,12 @@ private object CallCoordinator {
                 val answer = doc.get("answer") as? Map<*, *>
                 if (answer != null && peer?.remoteDescription == null) {
                     val sdp = answer["sdp"] as? String
-                    if (sdp != null) peer?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                    if (sdp != null) peer?.setRemoteDescription(object : SdpObserver {
+                        override fun onSetSuccess() { flushRemoteCandidates() }
+                        override fun onCreateSuccess(value: SessionDescription) {}
+                        override fun onCreateFailure(error: String) { callStatus = error }
+                        override fun onSetFailure(error: String) { callStatus = error }
+                    }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
                     callStatus = "কল সংযুক্ত হচ্ছে..."
                 }
             }
@@ -518,6 +542,7 @@ private object CallCoordinator {
         signalListener?.remove(); signalListener = null
         candidateListener?.remove(); candidateListener = null
         peer?.close(); peer = null
+        synchronized(pendingRemoteCandidates) { pendingRemoteCandidates.clear() }
         audioTrack?.dispose(); audioTrack = null
         audioSource?.dispose(); audioSource = null
         activeCallId = null
